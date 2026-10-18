@@ -4,6 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="24dp"
+    android:background="?attr/colorSurface"
     android:gravity="center_horizontal">
 
     <TextView
@@ -29,7 +30,7 @@
         android:layout_height="wrap_content"
         android:text="00:00"
         android:textAppearance="?textAppearanceTitleMedium"
-        android:layout_marginTop="48dp" />
+        android:layout_marginTop="24dp" />
 
     <SeekBar
         android:id="@+id/seek"
@@ -40,11 +41,20 @@
     <Button
         android:id="@+id/btnPlayPause"
         style="@style/Widget.Material3.Button.TonalButton"
-        android:layout_width="96dp"
-        android:layout_height="96dp"
+        android:layout_width="112dp"
+        android:layout_height="112dp"
         android:layout_marginTop="32dp"
         android:text="▶"
-        android:textSize="28sp" />
+        android:textSize="36sp"
+        android:backgroundTint="@color/record_coral" />
+
+    <Button
+        android:id="@+id/btnShare"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="22dp"
+        android:text="Compartilhar áudio"/>
 
     <Button
         android:id="@+id/btnDelete"
