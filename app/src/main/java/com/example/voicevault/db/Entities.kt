@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
 data class Folder(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
+    val colorHex: String = "#DB797E",
     val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -56,6 +57,7 @@ data class RecordingWithFolderName(
 data class FolderCount(
     val id: Long,
     val name: String,
+    val colorHex: String,
     val createdAt: Long,
     val recordingCount: Int,
 )
