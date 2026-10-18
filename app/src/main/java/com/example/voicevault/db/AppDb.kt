@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Folder::class, Recording::class], version = 2, exportSchema = false)
+@Database(entities = [Folder::class, Recording::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun folderDao(): FolderDao
     abstract fun recordingDao(): RecordingDao
@@ -25,6 +25,10 @@ abstract class AppDb : RoomDatabase() {
                             db.execSQL(
                                 "ALTER TABLE recordings ADD COLUMN format TEXT NOT NULL DEFAULT 'M4A'"
                             )
+                        }
+                    }, object : androidx.room.migration.Migration(2, 3) {
+                        override fun migrate(db: SupportSQLiteDatabase) {
+                            db.execSQL("ALTER TABLE folders ADD COLUMN colorHex TEXT NOT NULL DEFAULT '#DB797E'")
                         }
                     })
                     .build().also { instance = it }
