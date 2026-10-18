@@ -11,8 +11,10 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.example.voicevault.db.AudioFormat
+import com.example.voicevault.db.AudioQuality
 
 /**
  * Serviço em primeiro plano que grava o áudio.
@@ -38,14 +40,29 @@ class RecorderService : Service() {
         val outPath = intent?.getStringExtra(EXTRA_OUTPUT) ?: return START_NOT_STICKY
 
         createChannel()
-        startForeground(1, buildNotification("Gravando…", "Toque para abrir o VoiceVault"))
+        // Android 14+ (API 34): serviços com tipo microphone exigem a permissão RECORD_AUDIO
+        // concedida ANTES do startForeground — senão lança SecurityException e a gravação
+        // em segundo plano "não funciona".
+        if (Build.VERSION.SDK_INT >= 34 &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            LastRecord.result = LastRecord.Fail("Sem permissão de microfone")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+        ServiceCompat.startForeground(this, 1,
+            buildNotification("Gravando…", "Toque para abrir o VoiceVault"), fgsType)
 
         try {
             recorder = newRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 if (!fmt.configure(this)) throw IllegalStateException("Formato $fmt não suportado")
-                setAudioEncodingBitRate(96_000)
-                setAudioSamplingRate(44_100)
+                val q = AudioQuality.fromName(intent?.getStringExtra(EXTRA_QUALITY))
+                setAudioEncodingBitRate(q.bitRate)
+                setAudioSamplingRate(q.sampleRate)
                 setOutputFile(outPath)
                 prepare()
                 start()
@@ -150,6 +167,7 @@ class RecorderService : Service() {
         const val CHANNEL_ID = "recording"
         const val EXTRA_OUTPUT = "output"
         const val EXTRA_FORMAT = "format"
+        const val EXTRA_QUALITY = "quality"
         const val ACTION_STOP = "com.example.voicevault.STOP"
         const val ACTION_PAUSE = "com.example.voicevault.PAUSE"
         const val ACTION_RESUME = "com.example.voicevault.RESUME"

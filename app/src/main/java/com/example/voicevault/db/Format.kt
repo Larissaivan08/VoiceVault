@@ -2,11 +2,23 @@ package com.example.voicevault.db
 
 import android.media.MediaRecorder
 
+/** Qualidade de gravação (bitrate + taxa de amostragem). */
+enum class AudioQuality(val label: String, val bitRate: Int, val sampleRate: Int) {
+    HIGH("Alta qualidade (AAC 128 kbps)", 128_000, 44_100),
+    STANDARD("Qualidade padrão (96 kbps)", 96_000, 44_100),
+    LOW("Arquivo menor (64 kbps)", 64_000, 22_050);
+
+    companion object {
+        fun fromName(name: String?): AudioQuality =
+            entries.firstOrNull { it.name == name } ?: HIGH
+    }
+}
+
 /** Formatos de áudio suportados pela gravação. */
-enum class AudioFormat(val ext: String, val label: String) {
-    M4A("m4a", "M4A (AAC) — padrão, ótima qualidade"),
-    AAC("aac", "AAC em ADTS (.aac) — arquivo menor"),
-    MP3("mp3", "MP3 — se o aparelho tiver encoder nativo");
+enum class AudioFormat(val ext: String, val mime: String, val label: String) {
+    M4A("m4a", "audio/mp4", "M4A (AAC) — padrão, ótima qualidade"),
+    AAC("aac", "audio/aac", "AAC em ADTS (.aac) — arquivo menor"),
+    MP3("mp3", "audio/mpeg", "MP3 — se o aparelho tiver encoder nativo");
 
     /**
      * Configura formato + encoder no MediaRecorder.

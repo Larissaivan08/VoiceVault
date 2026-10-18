@@ -53,3 +53,24 @@ Erros encontrados e corrigidos nesta versão:
    - Ambiente com ~2 GB: compilar com `--no-daemon` e `GRADLE_OPTS=-Xmx1024m`.
 5. **Foreground service Android 13+**: exigir permissão em runtime na ordem certa:
    RECORD_AUDIO -> POST_NOTIFICATIONS -> startForegroundService com type=microphone.
+
+
+## v3 (layout da referência + exportar + segundo plano corrigido) — erros e soluções
+
+7. **Gravação em segundo plano parava ao minimizar (Android 14/API 34)**
+   - Causa: `startForeground()` chamando sem checar permissão + sem informar o tipo do serviço → SecurityException silenciosa.
+   - Solução: checar `RECORD_AUDIO` ANTES de subir o foreground; usar `ServiceCompat.startForeground(this, id, notif, FOREGROUND_SERVICE_TYPE_MICROPHONE)` (androidx.core). Manter `android:foregroundServiceType="microphone"` no manifest.
+
+8. **Exportar/compartilhar arquivo privado**
+   - Registrar `androidx.core.content.FileProvider` no manifest com `authorities="${applicationId}.fileprovider"` + `res/xml/file_paths.xml` (`files-path recordings/`). ACTION_SEND com FLAG_GRANT_READ_URI_PERMISSION.
+
+9. **Salvar no aparelho sem permissões chatas**
+   - Android 10+: MediaStore Downloads (`RELATIVE_PATH = "Download/VoiceVault"`, IS_PENDING 1→0). Android ≤9: pedir WRITE_EXTERNAL_STORAGE (maxSdkVersion 28 no manifest).
+
+10. **Chips criados via código**: não usar `app:ensureMinTouchTargetSize`; marcar seleção com `group.check(chip.id)` após addView (ids são auto-gerados por view).
+
+11. **Dois captadores de microfone simultâneos**: AudioRecord para nível (visual) pode falhar em alguns aparelhos enquanto o MediaRecorder grava — ter fallback de animação fake para a forma de onda.
+
+12. **Layout raiz ScrollView**: RecyclerView interno precisa `nestedScrollingEnabled=false` + `wrap_content`, senão colapsa/rouba scroll.
+
+13. **Enums novos (AudioQuality/mime)**: salvar escolha em SharedPreferences ("quality") e passar via Intent extra para o Service (o Service não lê prefs da UI diretamente — manter fonte única na Activity).

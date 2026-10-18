@@ -5,54 +5,12 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.example.voicevault.databinding.ItemFolderChipBinding
 import com.example.voicevault.databinding.ItemRecordingBinding
 import com.example.voicevault.db.FolderCount
 import com.example.voicevault.db.RecordingWithFolderName
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-
-/** Item da lista lateral de pastas (Raiz + pastas do usuário, um embaixo do outro). */
-class FolderListAdapter(
-    private val onClick: (Long?) -> Unit,          // null = Raiz
-    private val onLongClick: (FolderCount) -> Unit, // menu: renomear/excluir
-) : ListAdapter<Any, FolderListAdapter.VH>(DIFF) {
-
-    var selectedId: Long? = null
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
-        VH(ItemFolderChipBinding.inflate(LayoutInflater.from(parent.context), parent, false))
-
-    override fun onBindViewHolder(holder: VH, position: Int) {
-        val item = currentList[position]
-        val id: Long? = if (item is FolderCount) item.id else null
-        holder.binding.chip.text = if (item is FolderCount) {
-            "📁 ${item.name}  (${item.recordingCount})"
-        } else {
-            "🏠 Raiz"
-        }
-        holder.binding.chip.isChecked = selectedId == id
-        holder.binding.chip.setOnClickListener { onClick(id) }
-        if (item is FolderCount) {
-            holder.binding.chip.setOnLongClickListener { onLongClick(item); true }
-        } else {
-            holder.binding.chip.setOnLongClickListener(null)
-        }
-    }
-
-    class VH(val binding: ItemFolderChipBinding) : RecyclerView.ViewHolder(binding.root)
-
-    companion object {
-        private val DIFF = object : DiffUtil.ItemCallback<Any>() {
-            override fun areItemsTheSame(a: Any, b: Any) =
-                a === b ||
-                    (a is FolderCount && b is FolderCount && a.id == b.id) ||
-                    (a is String && b is String)
-            override fun areContentsTheSame(a: Any, b: Any) = a == b
-        }
-    }
-}
 
 /** Lista de gravações da pasta selecionada. */
 class RecordingAdapter(
@@ -72,7 +30,9 @@ class RecordingAdapter(
     inner class VH(private val b: ItemRecordingBinding) : RecyclerView.ViewHolder(b.root) {
         fun bind(item: RecordingWithFolderName) {
             b.title.text = item.title
-            b.subtitle.text = "%s  •  %s  •  %s  •  %s".format(
+            val where = if (item.folderName != null) "📁 ${item.folderName}  •  " else ""
+            b.subtitle.text = "%s%s  •  %s  •  %s  •  %s".format(
+                where,
                 formatDuration(item.durationMs),
                 formatSize(item.sizeBytes),
                 item.format,
