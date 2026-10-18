@@ -119,7 +119,7 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="⏸  Pausar"
+                        android:text="Pausar"
                         android:minHeight="54dp"
                         app:cornerRadius="20dp"
                         android:enabled="false"/>
@@ -130,7 +130,7 @@
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="8dp"
-                        android:text="♧  Marcar"
+                        android:text="Marcar"
                         android:minHeight="54dp"
                         app:cornerRadius="20dp"
                         android:enabled="false"/>
@@ -140,7 +140,7 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="☼ Tema"
+                        android:text="Tema"
                         android:minHeight="54dp"
                         app:cornerRadius="20dp"/>
                 </LinearLayout>
