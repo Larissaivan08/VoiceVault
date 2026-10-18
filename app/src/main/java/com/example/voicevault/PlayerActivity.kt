@@ -63,14 +63,20 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun preparePlayer() {
-        val file = store.fileFor(recordingId)
-        if (!file.exists()) { toast("Arquivo não encontrado."); finish(); return }
-        player = MediaPlayer().apply {
-            setDataSource(file.absolutePath)
-            prepare()
-            setOnCompletionListener { stopProgressUpdates(); resetUiToStart() }
+        val file = store.findExisting(recordingId)
+        if (file == null || !file.exists()) { toast("Arquivo não encontrado."); finish(); return }
+        try {
+            player = MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                prepare()
+                setOnCompletionListener { stopProgressUpdates(); resetUiToStart() }
+            }
+            b.seek.max = player?.duration ?: 0
+        } catch (e: Exception) {
+            releasePlayer()
+            toast("Não foi possível reproduzir este áudio.")
+            finish()
         }
-        b.seek.max = player?.duration ?: 0
     }
 
     private fun togglePlay() {
