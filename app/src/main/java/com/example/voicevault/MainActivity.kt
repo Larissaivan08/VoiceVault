@@ -248,6 +248,18 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun chooseFolderColor(id: Long) {
+        val colors = arrayOf("#DB797E", "#459FE1", "#AE72DE", "#46B99B", "#E8B34F", "#E56BB0")
+        val names = arrayOf("Coral", "Azul", "Roxo", "Verde", "Amarelo", "Rosa")
+        android.app.AlertDialog.Builder(this).setTitle("Cor da pasta")
+            .setItems(names) { _, choice ->
+                lifecycleScope.launch {
+                    val folder = db.folderDao().byId(id)
+                    if (folder != null) db.folderDao().update(folder.copy(colorHex = colors[choice]))
+                }
+            }.show()
+    }
+
     private fun renameFolder(id: Long, newName: String) {
         lifecycleScope.launch {
             if (db.folderDao().countByNameOther(newName, id) > 0) {
