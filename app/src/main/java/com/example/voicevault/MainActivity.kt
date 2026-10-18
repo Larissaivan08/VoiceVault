@@ -233,7 +233,7 @@ class MainActivity : AppCompatActivity() {
     // ---------- Pastas: renomear / excluir ----------
 
     private fun showFolderMenu(folder: FolderCount) {
-        val options = arrayOf("✏ Renomear pasta", "🗑 Excluir pasta")
+        val options = arrayOf("✏ Renomear pasta", "🎨 Alterar cor", "🗑 Excluir pasta")
         android.app.AlertDialog.Builder(this)
             .setTitle("📁 ${folder.name}")
             .setItems(options) { _, which ->
@@ -241,7 +241,8 @@ class MainActivity : AppCompatActivity() {
                     0 -> promptText("Renomear pasta", "Novo nome", folder.name) { newName ->
                         renameFolder(folder.id, newName)
                     }
-                    1 -> confirmDeleteFolder(folder)
+                    1 -> chooseFolderColor(folder.id)
+                    2 -> confirmDeleteFolder(folder)
                 }
             }
             .show()
