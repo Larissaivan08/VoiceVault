@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.UUID
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -399,10 +400,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
+        pausedTotalMs = 0L
+        pauseStartedAt = 0L
+        markers.clear()
         pendingFolder = currentFolderId
         pendingFormat = chosenFormat
         pendingQuality = chosenQuality
-        val tmp = File(cacheDir, "rec_tmp.${pendingFormat.ext}").also { it.delete() }
+        val tmp = File(cacheDir, "rec_tmp_${UUID.randomUUID()}.${pendingFormat.ext}")
         tmpFile = tmp
         recordStartMs = System.currentTimeMillis()
 
@@ -410,6 +414,8 @@ class MainActivity : AppCompatActivity() {
             putExtra(RecorderService.EXTRA_OUTPUT, tmp.absolutePath)
             putExtra(RecorderService.EXTRA_FORMAT, pendingFormat.name)
             putExtra(RecorderService.EXTRA_QUALITY, pendingQuality.name)
+            putExtra(RecorderService.EXTRA_HAS_FOLDER, pendingFolder != null)
+            pendingFolder?.let { putExtra(RecorderService.EXTRA_FOLDER, it) }
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -513,40 +519,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Se o serviço terminou, pega o resultado e salva a gravação no banco. */
+    /** The foreground service is responsible for persisting completed recordings. */
     private fun checkStoppedRecord() {
-        val st = LastRecord.result
-        if (st is LastRecord.Fail) {
-            LastRecord.result = null
-            toast(st.message)
-            syncRecordingState()
-            return
-        }
-        if (st !is LastRecord.Stopped) return
-        LastRecord.result = null
-        val file = File(st.outPath)
-        if (!file.exists() || file.length() == 0L) {
-            toast("Gravação vazia — nada salvo.")
-            return
-        }
-        lifecycleScope.launch {
-            val fmt = pendingFormat
-            val id = db.recordingDao().insert(
-                Recording(
-                    title = "Gravação " + SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
-                        .format(Date(recordStartMs)),
-                    folderId = pendingFolder,
-                    durationMs = max(st.durationMs, 100),
-                    sizeBytes = file.length(),
-                    format = fmt.name,
-                )
-            )
-            val dest = store.fileFor(id, fmt)
-            file.renameTo(dest)
-            db.recordingDao().byId(id)?.let { r ->
-                db.recordingDao().update(r.copy(sizeBytes = dest.length()))
+        when (val state = LastRecord.result) {
+            is LastRecord.Fail -> {
+                LastRecord.result = null
+                toast(state.message)
+                syncRecordingState()
             }
-            toast("Salva! (${dest.length() / 1024} KB, ${fmt.name})")
+            is LastRecord.Stopped -> {
+                LastRecord.result = null
+                toast("Gravação finalizada e salva.")
+                syncRecordingState()
+            }
+            else -> Unit
         }
     }
 
