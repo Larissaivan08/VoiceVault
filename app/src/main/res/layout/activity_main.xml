@@ -119,7 +119,9 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="⏸ Pausar"
+                        android:text="⏸  Pausar"
+                        android:minHeight="54dp"
+                        app:cornerRadius="20dp"
                         android:enabled="false"/>
                     <Button
                         android:id="@+id/btnMarker"
@@ -128,7 +130,9 @@
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="8dp"
-                        android:text="Marcador"
+                        android:text="♧  Marcar"
+                        android:minHeight="54dp"
+                        app:cornerRadius="20dp"
                         android:enabled="false"/>
                     <Button
                         android:id="@+id/btnTheme"
@@ -136,7 +140,9 @@
                         android:layout_width="0dp"
                         android:layout_weight="1"
                         android:layout_height="wrap_content"
-                        android:text="☼ Tema"/>
+                        android:text="☼ Tema"
+                        android:minHeight="54dp"
+                        app:cornerRadius="20dp"/>
                 </LinearLayout>
 
                 <!-- Qualidade -->
