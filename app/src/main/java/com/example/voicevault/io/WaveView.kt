@@ -7,7 +7,6 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.abs
-import kotlin.random.Random
 
 /**
  * Visualizador de forma de onda estilo "gravador": barras verticais que
@@ -77,15 +76,13 @@ class MicLevel(private val onLevel: (Float) -> Unit) {
                 )
             } catch (e: Exception) { null }
             if (rec == null || rec.state != android.media.AudioRecord.STATE_INITIALIZED) {
-                // fallback: animação pseudo-aleatória (visual apenas)
-                while (running) {
-                    onLevel(Random.nextFloat() * 0.85f + 0.1f)
-                    Thread.sleep(120)
-                }
+                rec?.release()
+                onLevel(0f)
                 return@Thread
             }
             val buf = ShortArray(bufSize / 2)
-            rec.startRecording()
+            try {
+                rec.startRecording()
             while (running) {
                 val read = rec.read(buf, 0, buf.size)
                 if (read > 0) {
@@ -94,10 +91,14 @@ class MicLevel(private val onLevel: (Float) -> Unit) {
                     val rms = Math.sqrt(sum / read) / 32768.0
                     onLevel(((rms * 6).toFloat()).coerceIn(0.05f, 1f))
                 }
-                Thread.sleep(120)
+                try { Thread.sleep(120) } catch (_: InterruptedException) { break }
             }
-            runCatching { rec.stop() }
-            rec.release()
+            } catch (_: Exception) {
+                onLevel(0f)
+            } finally {
+                runCatching { rec.stop() }
+                rec.release()
+            }
         }.also { it.isDaemon = true; it.start() }
     }
 
