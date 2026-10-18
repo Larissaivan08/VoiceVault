@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.SystemClock
 import android.text.InputType
 import android.view.View
 import android.widget.EditText
@@ -157,56 +158,50 @@ class MainActivity : AppCompatActivity() {
         currentFolderFlow.value = id
     }
 
-    /** Clean two-column folder cards, with subtle persistent folder colors. */
     private fun rebuildFolderChips(folders: List<FolderCount>) {
         val grid = b.folderGrid
         grid.removeAllViews()
         val items = listOf(FolderCount(-1L, "Raiz", "#DB797E", 0L, 0)) + folders
         items.forEachIndexed { index, folder ->
-            val isRoot = folder.id == -1L
-            val folderId = if (isRoot) null else folder.id
+            val folderId = if (folder.id == -1L) null else folder.id
             val selected = currentFolderId == folderId
             val color = Color.parseColor(folder.colorHex)
-            val card = com.google.android.material.card.MaterialCardView(this).apply {
-                radius = 18.dp().toFloat()
-                cardElevation = if (selected) 5.dp().toFloat() else 1.dp().toFloat()
-                setCardBackgroundColor(androidx.core.graphics.ColorUtils.setAlphaComponent(
-                    color, if (selected) 55 else 24))
-                strokeWidth = if (selected) 2.dp() else 0
-                strokeColor = color
+            val card = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(16.dp(), 18.dp(), 12.dp(), 18.dp())
+                minimumHeight = 84.dp()
+                background = GradientDrawable().apply {
+                    cornerRadius = 18.dp().toFloat()
+                    setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(color, if (selected) 58 else 28))
+                    setStroke(if (selected) 2.dp() else 1.dp(),
+                        androidx.core.graphics.ColorUtils.setAlphaComponent(color, if (selected) 255 else 70))
+                }
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { selectFolder(folderId); rebuildFolderChips(folders) }
-                if (!isRoot) setOnLongClickListener { showFolderMenu(folder); true }
+                if (folderId != null) setOnLongClickListener { showFolderMenu(folder); true }
             }
-            val content = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                setPadding(16.dp(), 18.dp(), 12.dp(), 18.dp())
-                background = null
-            }
-            val textColor = com.google.android.material.color.MaterialColors.getColor(
+            val foregroundColor = com.google.android.material.color.MaterialColors.getColor(
                 card, com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
-            val title = TextView(this).apply {
+            card.addView(TextView(this).apply {
                 text = folder.name
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(textColor)
-                setBackgroundColor(Color.TRANSPARENT)
+                setTextColor(foregroundColor)
+                background = null
+                includeFontPadding = false
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            val subtitle = TextView(this).apply {
-                text = if (isRoot) "Sem pasta" else if (folder.recordingCount == 1)
-                    "1 áudio" else "${folder.recordingCount} áudios"
+            })
+            card.addView(TextView(this).apply {
+                text = if (folderId == null) "Sem pasta" else if (folder.recordingCount == 1) "1 áudio" else "${folder.recordingCount} áudios"
                 textSize = 13f
+                setTextColor(foregroundColor)
                 alpha = 0.75f
-                setTextColor(textColor)
-                setBackgroundColor(Color.TRANSPARENT)
-                setPadding(0, 5.dp(), 0, 0)
-            }
-            content.addView(title)
-            content.addView(subtitle)
-            card.addView(content)
+                background = null
+                includeFontPadding = false
+                setPadding(0, 6.dp(), 0, 0)
+            })
             val params = GridLayout.LayoutParams(
                 GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f)).apply {
                 width = 0
@@ -518,25 +513,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateRecordingUi(recording: Boolean) {
+        val state = LastRecord.result as? LastRecord.Recording
         b.btnRecord.text = if (recording) "■" else "🎙"
         b.recDot.visibility = if (recording) View.VISIBLE else View.INVISIBLE
-        b.statusLabel.text = if (recording) "Gravando…" else ""
+        b.statusLabel.text = if (state?.paused == true) "Pausado" else if (recording) "Gravando…" else ""
         b.btnPauseResume.isEnabled = recording
+        b.btnPauseResume.text = if (state?.paused == true) "Retomar" else "Pausar"
         b.btnMarker.isEnabled = recording
         b.wave.setActive(recording)
-        if (recording) startWave() else stopWave()
         timer?.cancel()
         if (recording) {
-            timer = object : CountDownTimer(Long.MAX_VALUE, 500) {
-                override fun onTick(ms: Long) {
-                    val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
-                    b.timerLabel.text = formatHMS(max(0, elapsed))
-                }
+            timer = object : CountDownTimer(Long.MAX_VALUE, 250) {
+                override fun onTick(ms: Long) { refreshRecordingTimer() }
                 override fun onFinish() {}
             }.start()
+            refreshRecordingTimer()
         } else {
             b.timerLabel.text = "00:00:00"
         }
+    }
+
+    private fun elapsedRecordingMs(st: LastRecord.Recording): Long {
+        val now = SystemClock.elapsedRealtime()
+        val pausedNow = if (st.paused && st.pauseStartedElapsedMs > 0L)
+            now - st.pauseStartedElapsedMs else 0L
+        return (now - st.startedElapsedMs - st.pausedElapsedMs - pausedNow).coerceAtLeast(0L)
+    }
+
+    private fun refreshRecordingTimer() {
+        val st = LastRecord.result as? LastRecord.Recording ?: return
+        b.timerLabel.text = formatHMS(elapsedRecordingMs(st))
+        val label = if (st.paused) "Retomar" else "Pausar"
+        if (b.btnPauseResume.text.toString() != label) b.btnPauseResume.text = label
+        b.statusLabel.text = if (st.paused) "Pausado" else "Gravando…"
     }
 
     private fun formatHMS(ms: Long): String {
@@ -554,22 +563,14 @@ class MainActivity : AppCompatActivity() {
     private var pauseStartedAt = 0L
 
     private fun togglePauseResume() {
-        val st = LastRecord.result as? LastRecord.Recording ?: return
-        val action = if (st.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
+        val state = LastRecord.result as? LastRecord.Recording ?: return
+        val action = if (state.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
         startService(Intent(this, RecorderService::class.java).setAction(action))
-        if (st.paused) { pausedTotalMs += System.currentTimeMillis() - pauseStartedAt
-            b.btnPauseResume.text = "Pausar"; updateStatusPaused(false) }
-        else { pauseStartedAt = System.currentTimeMillis()
-            b.btnPauseResume.text = "Retomar"; updateStatusPaused(true) }
-    }
-
-    private fun updateStatusPaused(paused: Boolean) {
-        b.statusLabel.text = if (paused) "Pausado" else "Gravando…"
-        if (paused) stopWave() else startWave()
+        // UI reads the service-confirmed state on the next timer tick.
     }
 
     private fun addMarker() {
-        val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
+        val elapsed = (LastRecord.result as? LastRecord.Recording)?.let { elapsedRecordingMs(it) } ?: 0L
         markers.add(formatHMS(max(0, elapsed)))
         toast("Marcador em ${formatHMS(max(0, elapsed))}")
     }
