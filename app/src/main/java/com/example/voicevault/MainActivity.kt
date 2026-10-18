@@ -583,7 +583,7 @@ class MainActivity : AppCompatActivity() {
             recordStartMs = st.startedAt
             pendingFormat = AudioFormat.fromName(st.format)
             updateRecordingUi(true)
-            if (st.paused) { b.btnPauseResume.text = "Retomar"; updateStatusPaused(true) }
+            if (st.paused) { b.btnPauseResume.text = "Retomar"; b.statusLabel.text = "Pausado" }
             else { b.btnPauseResume.text = "Pausar" }
         } else if (!isRecordingActive()) {
             updateRecordingUi(false)
