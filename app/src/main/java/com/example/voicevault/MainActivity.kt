@@ -157,45 +157,63 @@ class MainActivity : AppCompatActivity() {
         currentFolderFlow.value = id
     }
 
-    /** Folder cards, two columns, with long-press management. */
+    /** Clean two-column folder cards, with subtle persistent folder colors. */
     private fun rebuildFolderChips(folders: List<FolderCount>) {
         val grid = b.folderGrid
         grid.removeAllViews()
         val items = listOf(FolderCount(-1L, "Raiz", "#DB797E", 0L, 0)) + folders
-        val palette = intArrayOf(0xFFDB797E.toInt(), 0xFF459FE1.toInt(),
-            0xFFAE72DE.toInt(), 0xFF46B99B.toInt())
         items.forEachIndexed { index, folder ->
             val isRoot = folder.id == -1L
-            val id = if (isRoot) null else folder.id
-            val selected = currentFolderId == id
+            val folderId = if (isRoot) null else folder.id
+            val selected = currentFolderId == folderId
+            val color = Color.parseColor(folder.colorHex)
             val card = com.google.android.material.card.MaterialCardView(this).apply {
-                radius = 18f * resources.displayMetrics.density
-                cardElevation = if (selected) 7f else 2f
-                setCardBackgroundColor(
-                    if (selected) androidx.core.graphics.ColorUtils.setAlphaComponent(Color.parseColor(folder.colorHex), 55)
-                    else com.google.android.material.color.MaterialColors.getColor(
-                        this, com.google.android.material.R.attr.colorSurfaceContainer, 0)
-                )
-                strokeWidth = if (selected) (2 * resources.displayMetrics.density).toInt() else 0
-                strokeColor = Color.parseColor(folder.colorHex)
+                radius = 18.dp().toFloat()
+                cardElevation = if (selected) 5.dp().toFloat() else 1.dp().toFloat()
+                setCardBackgroundColor(androidx.core.graphics.ColorUtils.setAlphaComponent(
+                    color, if (selected) 55 else 24))
+                strokeWidth = if (selected) 2.dp() else 0
+                strokeColor = color
                 isClickable = true
-                setOnClickListener { selectFolder(id); rebuildFolderChips(folders) }
+                isFocusable = true
+                setOnClickListener { selectFolder(folderId); rebuildFolderChips(folders) }
                 if (!isRoot) setOnLongClickListener { showFolderMenu(folder); true }
             }
-            val content = TextView(this).apply {
-                text = "📁  ${folder.name}\n      ${if (isRoot) "Sem pasta" else "${folder.recordingCount} áudios"}"
-                textSize = 15f
-                setTypeface(null, Typeface.BOLD)
-                setPadding(16.dp(), 20.dp(), 8.dp(), 20.dp())
-                setTextColor(com.google.android.material.color.MaterialColors.getColor(
-                    this, com.google.android.material.R.attr.colorOnSurface, Color.WHITE))
+            val content = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(16.dp(), 18.dp(), 12.dp(), 18.dp())
+                background = null
             }
+            val textColor = com.google.android.material.color.MaterialColors.getColor(
+                card, com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
+            val title = TextView(this).apply {
+                text = folder.name
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(textColor)
+                setBackgroundColor(Color.TRANSPARENT)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            val subtitle = TextView(this).apply {
+                text = if (isRoot) "Sem pasta" else if (folder.recordingCount == 1)
+                    "1 áudio" else "${folder.recordingCount} áudios"
+                textSize = 13f
+                alpha = 0.75f
+                setTextColor(textColor)
+                setBackgroundColor(Color.TRANSPARENT)
+                setPadding(0, 5.dp(), 0, 0)
+            }
+            content.addView(title)
+            content.addView(subtitle)
             card.addView(content)
-            val lp = GridLayout.LayoutParams(GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f))
-            lp.width = 0
-            lp.height = GridLayout.LayoutParams.WRAP_CONTENT
-            lp.setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
-            grid.addView(card, lp)
+            val params = GridLayout.LayoutParams(
+                GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f)).apply {
+                width = 0
+                height = GridLayout.LayoutParams.WRAP_CONTENT
+                setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
+            }
+            grid.addView(card, params)
         }
     }
     private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
@@ -540,9 +558,9 @@ class MainActivity : AppCompatActivity() {
         val action = if (st.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
         startService(Intent(this, RecorderService::class.java).setAction(action))
         if (st.paused) { pausedTotalMs += System.currentTimeMillis() - pauseStartedAt
-            b.btnPauseResume.text = "⏸ Pausar"; updateStatusPaused(false) }
+            b.btnPauseResume.text = "Pausar"; updateStatusPaused(false) }
         else { pauseStartedAt = System.currentTimeMillis()
-            b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
+            b.btnPauseResume.text = "Retomar"; updateStatusPaused(true) }
     }
 
     private fun updateStatusPaused(paused: Boolean) {
@@ -564,8 +582,8 @@ class MainActivity : AppCompatActivity() {
             recordStartMs = st.startedAt
             pendingFormat = AudioFormat.fromName(st.format)
             updateRecordingUi(true)
-            if (st.paused) { b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
-            else { b.btnPauseResume.text = "⏸ Pausar" }
+            if (st.paused) { b.btnPauseResume.text = "Retomar"; updateStatusPaused(true) }
+            else { b.btnPauseResume.text = "Pausar" }
         } else if (!isRecordingActive()) {
             updateRecordingUi(false)
         }
