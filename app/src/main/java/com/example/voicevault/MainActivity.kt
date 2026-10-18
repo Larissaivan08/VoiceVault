@@ -161,7 +161,7 @@ class MainActivity : AppCompatActivity() {
     private fun rebuildFolderChips(folders: List<FolderCount>) {
         val grid = b.folderGrid
         grid.removeAllViews()
-        val items = listOf(FolderCount(-1L, "Raiz", 0L, 0)) + folders
+        val items = listOf(FolderCount(-1L, "Raiz", "#DB797E", 0L, 0)) + folders
         val palette = intArrayOf(0xFFDB797E.toInt(), 0xFF459FE1.toInt(),
             0xFFAE72DE.toInt(), 0xFF46B99B.toInt())
         items.forEachIndexed { index, folder ->
@@ -172,12 +172,12 @@ class MainActivity : AppCompatActivity() {
                 radius = 18f * resources.displayMetrics.density
                 cardElevation = if (selected) 7f else 2f
                 setCardBackgroundColor(
-                    if (selected) palette[index % palette.size] and 0x33FFFFFF
+                    if (selected) androidx.core.graphics.ColorUtils.setAlphaComponent(Color.parseColor(folder.colorHex), 55)
                     else com.google.android.material.color.MaterialColors.getColor(
                         this, com.google.android.material.R.attr.colorSurfaceContainer, 0)
                 )
                 strokeWidth = if (selected) (2 * resources.displayMetrics.density).toInt() else 0
-                strokeColor = palette[index % palette.size]
+                strokeColor = Color.parseColor(folder.colorHex)
                 isClickable = true
                 setOnClickListener { selectFolder(id); rebuildFolderChips(folders) }
                 if (!isRoot) setOnLongClickListener { showFolderMenu(folder); true }
