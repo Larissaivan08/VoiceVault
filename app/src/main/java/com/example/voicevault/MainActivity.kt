@@ -223,6 +223,7 @@ class MainActivity : AppCompatActivity() {
             val id = db.folderDao().insert(Folder(name = name))
             selectFolder(id)
             toast("Pasta \"$name\" criada.")
+            chooseFolderColor(id)
         }
     }
 
