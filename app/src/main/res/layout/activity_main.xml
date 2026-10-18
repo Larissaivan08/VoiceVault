@@ -15,41 +15,103 @@
         android:maxLines="1"
         android:autofillHints="" />
 
-    <!-- Trilha de pastas (chip Raiz + chips do usuário) -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/folderChips"
+    <!-- Linha de formato de gravação -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:clipToPadding="false"
-        android:paddingHorizontal="4dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="4dp">
 
-    <!-- Lista de gravações -->
-    <FrameLayout
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Formato: "
+            android:textAppearance="?textAppearanceBodyMedium" />
+
+        <Button
+            android:id="@+id/btnFormat"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="0dp"
+            android:text="M4A" />
+
+        <TextView
+            android:id="@+id/statusLabel"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:textAppearance="?textAppearanceBodySmall"
+            android:textColor="?colorPrimary" />
+    </LinearLayout>
+
+    <!-- Corpo: painel lateral de pastas + lista de gravações -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp">
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/list"
-            android:layout_width="match_parent"
+        <!-- Painel lateral: pastas uma embaixo da outra -->
+        <LinearLayout
+            android:layout_width="150dp"
             android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="96dp" />
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/emptyHint"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="@string/empty_hint"
-            android:textAppearance="?textAppearanceBodyLarge"
-            android:textColor="?android:textColorSecondary"
-            android:visibility="gone" />
-    </FrameLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Pastas"
+                android:textStyle="bold"
+                android:textAppearance="?textAppearanceTitleSmall"
+                android:paddingHorizontal="4dp" />
 
-    <!-- Barra inferior: gravar + nova pasta -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/folderList"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:scrollbars="vertical" />
+
+            <Button
+                android:id="@+id/btnAddFolder"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_new_folder" />
+        </LinearLayout>
+
+        <!-- Lista de gravações -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="96dp" />
+
+            <TextView
+                android:id="@+id/emptyHint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/empty_hint"
+                android:textAppearance="?textAppearanceBodyLarge"
+                android:textColor="?android:textColorSecondary"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- Barra inferior: gravar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -65,24 +127,15 @@
             android:layout_height="wrap_content"
             android:text="@string/btn_record" />
 
-        <Button
-            android:id="@+id/btnAddFolder"
-            style="@style/Widget.Material3.Button.OutlinedButton.Icon"
+        <TextView
+            android:id="@+id/timerLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="@string/btn_new_folder" />
+            android:layout_marginStart="12dp"
+            android:text="00:00"
+            android:textAppearance="?textAppearanceTitleMedium"
+            android:textColor="?colorError"
+            android:visibility="gone" />
     </LinearLayout>
-
-    <TextView
-        android:id="@+id/timerLabel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:paddingTop="4dp"
-        android:text="00:00"
-        android:textAppearance="?textAppearanceTitleMedium"
-        android:textColor="?colorError"
-        android:visibility="gone" />
 
 </LinearLayout>

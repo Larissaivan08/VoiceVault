@@ -19,6 +19,12 @@ interface FolderDao {
     @Delete
     suspend fun delete(folder: Folder)
 
+    @Query("UPDATE folders SET name = :name WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    @Query("DELETE FROM folders WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM folders WHERE id = :id")
     suspend fun byId(id: Long): Folder?
 
@@ -31,6 +37,9 @@ interface FolderDao {
 
     @Query("SELECT COUNT(*) FROM folders WHERE name = :name COLLATE NOCASE")
     suspend fun countByName(name: String): Int
+
+    @Query("SELECT COUNT(*) FROM folders WHERE name = :name COLLATE NOCASE AND id != :selfId")
+    suspend fun countByNameOther(name: String, selfId: Long): Int
 
     /** Pastas com quantas gravações cada uma tem (0 quando vazia). */
     @Transaction
@@ -58,6 +67,12 @@ interface RecordingDao {
     @Query("SELECT * FROM recordings WHERE id = :id")
     suspend fun byId(id: Long): Recording?
 
+    @Query("DELETE FROM recordings WHERE folderId = :folderId")
+    suspend fun deleteInFolder(folderId: Long)
+
+    @Query("SELECT * FROM recordings WHERE folderId = :folderId")
+    suspend fun inFolderSync(folderId: Long): List<Recording>
+
     /** Lista filtrada por pasta (null = Raiz) e/ou busca por nome. */
     @Query(
         """SELECT r.*, f.name AS folderName FROM recordings r
@@ -81,7 +96,7 @@ interface RecordingDao {
     @Query("UPDATE recordings SET folderId = :folderId WHERE id = :recordingId")
     suspend fun moveToFolder(recordingId: Long, folderId: Long?)
 
-    /** Total de gravações em todas as pastas (rodapé "X gravações"). */
+    /** Total de gravações em todas as pastas. */
     @Query("SELECT COUNT(*) FROM recordings")
     fun countFlow(): Flow<Int>
 }

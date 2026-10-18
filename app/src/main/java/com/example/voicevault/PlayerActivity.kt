@@ -42,9 +42,10 @@ class PlayerActivity : AppCompatActivity() {
             val rec = db.recordingDao().byId(recordingId)
             if (rec == null) { finish(); return@launch }
             b.title.text = rec.title
-            b.meta.text = "%s  •  %s".format(
+            b.meta.text = "%s  •  %s  •  %s".format(
                 RecordingAdapter.formatDuration(rec.durationMs),
                 RecordingAdapter.formatSize(rec.sizeBytes),
+                rec.format,
             )
             preparePlayer()
         }

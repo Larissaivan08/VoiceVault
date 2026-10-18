@@ -13,10 +13,11 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Chip de pasta na trilha horizontal do topo (Raiz + pastas do usuário). */
-class FolderChipAdapter(
-    private val onClick: (Long?) -> Unit, // null = Raiz
-) : ListAdapter<Any, FolderChipAdapter.VH>(DIFF) {
+/** Item da lista lateral de pastas (Raiz + pastas do usuário, um embaixo do outro). */
+class FolderListAdapter(
+    private val onClick: (Long?) -> Unit,          // null = Raiz
+    private val onLongClick: (FolderCount) -> Unit, // menu: renomear/excluir
+) : ListAdapter<Any, FolderListAdapter.VH>(DIFF) {
 
     var selectedId: Long? = null
 
@@ -27,13 +28,17 @@ class FolderChipAdapter(
         val item = currentList[position]
         val id: Long? = if (item is FolderCount) item.id else null
         holder.binding.chip.text = if (item is FolderCount) {
-            "📁 ${item.name} (${item.recordingCount})"
+            "📁 ${item.name}  (${item.recordingCount})"
         } else {
             "🏠 Raiz"
         }
         holder.binding.chip.isChecked = selectedId == id
-        // click listener sempre registrado — mesmo em ViewHolder reciclado
         holder.binding.chip.setOnClickListener { onClick(id) }
+        if (item is FolderCount) {
+            holder.binding.chip.setOnLongClickListener { onLongClick(item); true }
+        } else {
+            holder.binding.chip.setOnLongClickListener(null)
+        }
     }
 
     class VH(val binding: ItemFolderChipBinding) : RecyclerView.ViewHolder(binding.root)
@@ -67,9 +72,10 @@ class RecordingAdapter(
     inner class VH(private val b: ItemRecordingBinding) : RecyclerView.ViewHolder(b.root) {
         fun bind(item: RecordingWithFolderName) {
             b.title.text = item.title
-            b.subtitle.text = "%s  •  %s  •  %s".format(
+            b.subtitle.text = "%s  •  %s  •  %s  •  %s".format(
                 formatDuration(item.durationMs),
                 formatSize(item.sizeBytes),
+                item.format,
                 DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
                     .format(Date(item.createdAt)),
             )
@@ -81,7 +87,9 @@ class RecordingAdapter(
     companion object {
         fun formatDuration(ms: Long): String {
             val totalSec = ms / 1000
-            return String.format(Locale.US, "%02d:%02d", totalSec / 60, totalSec % 60)
+            val h = totalSec / 3600
+            return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, (totalSec % 3600) / 60, totalSec % 60)
+            else String.format(Locale.US, "%02d:%02d", totalSec / 60, totalSec % 60)
         }
 
         fun formatSize(bytes: Long): String = when {

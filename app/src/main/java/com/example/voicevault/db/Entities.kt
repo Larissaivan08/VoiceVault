@@ -36,6 +36,8 @@ data class Recording(
     val durationMs: Long,
     val sizeBytes: Long,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Nome do enum [com.example.voicevault.db.AudioFormat] usado na gravação. */
+    val format: String = "M4A",
 )
 
 /** Linha usada na listagem (gravação + nome da pasta onde está). */
@@ -46,6 +48,7 @@ data class RecordingWithFolderName(
     val durationMs: Long,
     val sizeBytes: Long,
     val createdAt: Long,
+    val format: String = "M4A",
     val folderName: String?, // null quando está na Raiz
 )
 

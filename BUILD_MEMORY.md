@@ -37,3 +37,19 @@ cd VoiceVault
 ```
 
 Se algum erro novo aparecer, anexe aqui neste arquivo (data + erro + correção).
+
+
+## v2 (out/2026) — novas features: pastas laterais, renomear/excluir pasta, formatos, segundo plano
+Erros encontrados e corrigidos nesta versão:
+
+1. **`Returns are not allowed for functions with expression body`** (Format.kt)
+   - Função `= try {...}` não pode usar `return` dentro. Solução: usar `runCatching { ... }.getOrDefault(false)` e `error(...)` para abortar.
+2. **`Unresolved reference: MP3`** em `MediaRecorder.OutputFormat.MP3` / `AudioEncoder.MP3`
+   - O AOSP (compileSdk 34) NÃO tem essas constantes públicas; só alguns fabricantes expõem.
+   - Solução: buscar a constante por reflection (`Class.getField("MP3")`) e falhar graciosamente com mensagem "aparelho não tem encoder MP3 nativo".
+3. **`'outPath' hides member of supertype 'State' and needs 'override' modifier`** (LastRecord.Fail)
+   - Propriedade que já existe no sealed class pai precisa de `override`.
+4. **Gradle daemon morto por falta de RAM** ("daemon disappeared unexpectedly")
+   - Ambiente com ~2 GB: compilar com `--no-daemon` e `GRADLE_OPTS=-Xmx1024m`.
+5. **Foreground service Android 13+**: exigir permissão em runtime na ordem certa:
+   RECORD_AUDIO -> POST_NOTIFICATIONS -> startForegroundService com type=microphone.
