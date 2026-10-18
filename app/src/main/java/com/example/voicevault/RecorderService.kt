@@ -97,13 +97,13 @@ class RecorderService : Service() {
         startedElapsed = SystemClock.elapsedRealtime()
         pausedElapsed = 0L
         pauseStarted = 0L
-        LastRecord.result = LastRecord.Recording(startedAt, outPath, fmt.name)
+        LastRecord.result = LastRecord.Recording(startedAt, outPath, fmt.name, startedElapsedMs = startedElapsed)
         return START_STICKY
     }
 
     private fun pauseRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (runCatching { recorder?.pause() }.isSuccess) {
+        if (recorder != null && pauseStarted == 0L) {
+            if (runCatching { recorder!!.pause() }.isSuccess) {
                 pauseStarted = SystemClock.elapsedRealtime()
                 setPaused(true)
                 updateNotification("Pausado", "Gravação pausada — toque para retomar")
@@ -112,8 +112,8 @@ class RecorderService : Service() {
     }
 
     private fun resumeRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (runCatching { recorder?.resume() }.isSuccess) {
+        if (recorder != null && pauseStarted > 0L) {
+            if (runCatching { recorder!!.resume() }.isSuccess) {
                 if (pauseStarted > 0L) pausedElapsed += SystemClock.elapsedRealtime() - pauseStarted
                 pauseStarted = 0L
                 setPaused(false)
@@ -124,7 +124,7 @@ class RecorderService : Service() {
 
     private fun setPaused(value: Boolean) {
         val r = LastRecord.result
-        if (r is LastRecord.Recording) LastRecord.result = r.copy(paused = value)
+        if (r is LastRecord.Recording) LastRecord.result = r.copy(paused = value, pausedElapsedMs = pausedElapsed, pauseStartedElapsedMs = pauseStarted)
     }
 
     override fun onDestroy() {
@@ -249,6 +249,9 @@ object LastRecord {
         override val outPath: String,
         val format: String,
         val paused: Boolean = false,
+        val startedElapsedMs: Long = 0L,
+        val pausedElapsedMs: Long = 0L,
+        val pauseStartedElapsedMs: Long = 0L,
     ) : State()
     data class Stopped(val durationMs: Long, override val outPath: String) : State()
     data class Fail(val message: String) : State() { override val outPath = "" }
