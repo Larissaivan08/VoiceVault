@@ -13,6 +13,12 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import android.widget.GridLayout
+import android.widget.TextView
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -82,6 +88,8 @@ class MainActivity : AppCompatActivity() {
         updateFormatButton()
         updateQualityLabel()
 
+        val currentTheme = prefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        if (AppCompatDelegate.getDefaultNightMode() != currentTheme) AppCompatDelegate.setDefaultNightMode(currentTheme)
         setupLists()
         setupButtons()
         observeData()
@@ -119,6 +127,7 @@ class MainActivity : AppCompatActivity() {
             title = "Nova pasta", hint = "Nome da pasta", prefill = "",
         ) { name -> createFolder(name) } }
         b.btnFormat.setOnClickListener { chooseFormat() }
+        b.btnTheme.setOnClickListener { chooseTheme() }
     }
 
     private fun observeData() {
@@ -148,32 +157,61 @@ class MainActivity : AppCompatActivity() {
         currentFolderFlow.value = id
     }
 
-    /** Chips de pastas no topo (estilo da referência): seleção ao tocar, menu ao segurar. */
+    /** Folder cards, two columns, with long-press management. */
     private fun rebuildFolderChips(folders: List<FolderCount>) {
-        val group = b.folderChips
-        group.check(group.childCount - 1) // limpa seleção sem disparar listener
-        group.removeAllViews()
-        val root = com.google.android.material.chip.Chip(this).apply {
-            text = "🏠 Raiz"; isCheckable = true; tag = null
-            setOnClickListener { selectFolder(null) }
-        }
-        group.addView(root)
-        folders.forEach { f ->
-            val chip = com.google.android.material.chip.Chip(this).apply {
-                text = "📁 ${f.name} (${f.recordingCount})"
-                isCheckable = true; tag = f.id
-                setOnClickListener { selectFolder(f.id) }
-                setOnLongClickListener { showFolderMenu(f); true }
+        val grid = b.folderGrid
+        grid.removeAllViews()
+        val items = listOf(FolderCount(-1L, "Raiz", 0L, 0)) + folders
+        val palette = intArrayOf(0xFFDB797E.toInt(), 0xFF459FE1.toInt(),
+            0xFFAE72DE.toInt(), 0xFF46B99B.toInt())
+        items.forEachIndexed { index, folder ->
+            val isRoot = folder.id == -1L
+            val id = if (isRoot) null else folder.id
+            val selected = currentFolderId == id
+            val card = com.google.android.material.card.MaterialCardView(this).apply {
+                radius = 18f * resources.displayMetrics.density
+                cardElevation = if (selected) 7f else 2f
+                setCardBackgroundColor(
+                    if (selected) palette[index % palette.size] and 0x33FFFFFF
+                    else com.google.android.material.color.MaterialColors.getColor(
+                        this, com.google.android.material.R.attr.colorSurfaceContainer, 0)
+                )
+                strokeWidth = if (selected) (2 * resources.displayMetrics.density).toInt() else 0
+                strokeColor = palette[index % palette.size]
+                isClickable = true
+                setOnClickListener { selectFolder(id); rebuildFolderChips(folders) }
+                if (!isRoot) setOnLongClickListener { showFolderMenu(folder); true }
             }
-            group.addView(chip)
-        }
-        // marca a pasta atual
-        for (i in 0 until group.childCount) {
-            val c = group.getChildAt(i) as com.google.android.material.chip.Chip
-            if (c.tag == currentFolderId || (currentFolderId == null && c.tag == null)) {
-                group.check(c.id); c.isChecked = true
+            val content = TextView(this).apply {
+                text = "📁  ${folder.name}\n      ${if (isRoot) "Sem pasta" else "${folder.recordingCount} áudios"}"
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(16.dp(), 20.dp(), 8.dp(), 20.dp())
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(
+                    this, com.google.android.material.R.attr.colorOnSurface, Color.WHITE))
             }
+            card.addView(content)
+            val lp = GridLayout.LayoutParams(GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f))
+            lp.width = 0
+            lp.height = GridLayout.LayoutParams.WRAP_CONTENT
+            lp.setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
+            grid.addView(card, lp)
         }
+    }
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    private fun chooseTheme() {
+        val modes = intArrayOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
+            AppCompatDelegate.MODE_NIGHT_NO, AppCompatDelegate.MODE_NIGHT_YES)
+        val names = arrayOf("Automático (sistema)", "Claro", "Escuro")
+        val current = modes.indexOf(AppCompatDelegate.getDefaultNightMode()).coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Aparência")
+            .setSingleChoiceItems(names, current) { dialog, which ->
+                prefs.edit().putInt("theme_mode", modes[which]).apply()
+                AppCompatDelegate.setDefaultNightMode(modes[which])
+                dialog.dismiss()
+            }.show()
     }
 
     private fun createFolder(name: String) {
@@ -448,7 +486,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateRecordingUi(recording: Boolean) {
-        b.btnRecord.text = if (recording) "⏹ Parar" else "● Gravar"
+        b.btnRecord.text = if (recording) "■" else "🎙"
         b.recDot.visibility = if (recording) View.VISIBLE else View.INVISIBLE
         b.statusLabel.text = if (recording) "Gravando…" else ""
         b.btnPauseResume.isEnabled = recording
@@ -476,8 +514,8 @@ class MainActivity : AppCompatActivity() {
 
     // ---- forma de onda ----
     private val micLevel = MicLevel { level -> runOnUiThread { b.wave.push(level) } }
-    private fun startWave() = micLevel.start()
-    private fun stopWave() = micLevel.stop()
+    private fun startWave() = b.wave.setActive(true)
+    private fun stopWave() = b.wave.setActive(false)
 
     // ---- pausar / retomar e marcadores ----
     private var pausedTotalMs = 0L
