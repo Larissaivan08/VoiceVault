@@ -39,19 +39,27 @@ object Exporter {
             }
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-            resolver.openOutputStream(uri)?.use { out -> file.inputStream().copyTo(out) }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            uri
+            try {
+                val out = resolver.openOutputStream(uri) ?: error("Não foi possível abrir o destino")
+                out.use { stream -> file.inputStream().use { input -> input.copyTo(stream) } }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                uri
+            } catch (e: Exception) {
+                resolver.delete(uri, null, null)
+                null
+            }
         } else {
             // Android 8/9: cópia direta para Downloads (WRITE_EXTERNAL_STORAGE pedida antes)
             @Suppress("DEPRECATION")
             val dl = File(android.os.Environment.getExternalStoragePublicDirectory(
                 android.os.Environment.DIRECTORY_DOWNLOADS), "VoiceVault").apply { mkdirs() }
             val dest = File(dl, displayName)
-            file.copyTo(dest, overwrite = true)
-            Uri.fromFile(dest)
+            runCatching {
+                file.copyTo(dest, overwrite = true)
+                Uri.fromFile(dest)
+            }.getOrNull()
         }
     }
 }
