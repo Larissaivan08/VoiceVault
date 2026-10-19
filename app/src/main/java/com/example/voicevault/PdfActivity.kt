@@ -188,13 +188,18 @@ class PdfActivity : AppCompatActivity() {
         fun addFolder(name: String, id: Long?, index: Int) {
             val selected = folderId == id
             val tint = colors[index % colors.size]
-            val card = MaterialCardView(this).apply {
-                radius = 18.dp().toFloat()
-                cardElevation = if (selected) 4.dp().toFloat() else 1.dp().toFloat()
-                setCardBackgroundColor(ColorUtils.setAlphaComponent(tint, if (selected) 52 else 25))
-                strokeColor = tint
-                strokeWidth = if (selected) 2.dp() else 1.dp()
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                minimumHeight = 84.dp()
+                setPadding(14.dp(), 17.dp(), 10.dp(), 17.dp())
+                background = GradientDrawable().apply {
+                    cornerRadius = 18.dp().toFloat()
+                    setColor(ColorUtils.setAlphaComponent(tint, if (selected) 58 else 28))
+                    setStroke(if (selected) 2.dp() else 1.dp(),
+                        ColorUtils.setAlphaComponent(tint, if (selected) 255 else 70))
+                }
                 isClickable = true
+                isFocusable = true
                 setOnClickListener { folderId = id; refresh() }
             }
             val count = db.readableDatabase.rawQuery(
@@ -202,12 +207,7 @@ class PdfActivity : AppCompatActivity() {
                 else "SELECT COUNT(*) FROM documents WHERE folderId = ?",
                 if (id == null) null else arrayOf(id.toString())
             ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
-            val content = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = null
-                setPadding(14.dp(), 17.dp(), 10.dp(), 17.dp())
-            }
-            content.addView(TextView(this).apply {
+            card.addView(TextView(this).apply {
                 text = name
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -216,7 +216,7 @@ class PdfActivity : AppCompatActivity() {
                 setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
                 background = null
             })
-            content.addView(TextView(this).apply {
+            card.addView(TextView(this).apply {
                 text = "$count PDFs"
                 textSize = 13f
                 alpha = 0.72f
@@ -224,7 +224,6 @@ class PdfActivity : AppCompatActivity() {
                 setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
                 background = null
             })
-            card.addView(content)
             if (id != null) card.setOnLongClickListener {
                 AlertDialog.Builder(this@PdfActivity).setTitle(name)
                     .setItems(arrayOf("Renomear", "Excluir pasta")) { _, option ->
@@ -252,8 +251,20 @@ class PdfActivity : AppCompatActivity() {
                 setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
             })
         }
-        addFolder("Raiz", null, 0)
-        folders.forEachIndexed { index, pair -> addFolder(pair.second, pair.first, index + 1) }
+        folders.forEachIndexed { index, pair -> addFolder(pair.second, pair.first, index) }
+        val looseCount = db.readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM documents WHERE folderId IS NULL", null
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        if (looseCount > 0) {
+            foldersRow.addView(TextView(this).apply {
+                text = "PDFs sem pasta ($looseCount)  ›"
+                textSize = 14f
+                setPadding(12.dp(), 12.dp(), 12.dp(), 12.dp())
+                setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary, Color.DKGRAY))
+                setOnClickListener { folderId = null; refresh() }
+            }, GridLayout.LayoutParams(GridLayout.spec((folders.size + 1) / 2),
+                GridLayout.spec(0, 2)).apply { width = -1 })
+        }
         documentsList.removeAllViews()
         val docs = mutableListOf<Triple<Long, String, String>>()
         val where = if (folderId == null) "folderId IS NULL" else "folderId=?"
