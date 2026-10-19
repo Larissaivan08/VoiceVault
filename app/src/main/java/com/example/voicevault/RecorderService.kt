@@ -11,6 +11,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.util.Log
 import com.example.voicevault.db.AppDb
 import com.example.voicevault.db.Recording
 import com.example.voicevault.io.AudioStore
@@ -41,12 +42,22 @@ class RecorderService : Service() {
     private var format = AudioFormat.M4A
     private var outputPath = ""
     private var hasStopped = false
+    private var userRequestedStop = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP -> {
+                val age = SystemClock.elapsedRealtime() - startedElapsed
+                if (recorder != null && startedElapsed > 0L && age < 1200L) {
+                    Log.w("GravadorSmart", "Ignorando STOP prematuro: ${age}ms")
+                    return START_STICKY
+                }
+                userRequestedStop = true
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ACTION_PAUSE -> { pauseRecording(); return START_NOT_STICKY }
             ACTION_RESUME -> { resumeRecording(); return START_NOT_STICKY }
         }
@@ -97,6 +108,7 @@ class RecorderService : Service() {
         startedElapsed = SystemClock.elapsedRealtime()
         pausedElapsed = 0L
         pauseStarted = 0L
+        userRequestedStop = false
         LastRecord.result = LastRecord.Recording(startedAt, outPath, fmt.name, startedElapsedMs = startedElapsed)
         return START_STICKY
     }
@@ -128,6 +140,7 @@ class RecorderService : Service() {
     }
 
     override fun onDestroy() {
+        if (!userRequestedStop && recorder != null) Log.e("GravadorSmart", "Serviço destruído sem comando de parada")
         if (!hasStopped) finishAndSave()
         super.onDestroy()
         stopForeground(STOP_FOREGROUND_REMOVE)
