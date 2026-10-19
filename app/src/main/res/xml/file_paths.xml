@@ -2,4 +2,5 @@
 <paths>
     <files-path name="recordings" path="recordings/" />
     <cache-path name="tmp" path="/" />
+    <files-path name="pdf_documents" path="pdf_documents/" />
 </paths>
