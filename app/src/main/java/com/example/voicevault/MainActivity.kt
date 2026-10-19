@@ -7,12 +7,21 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.SystemClock
 import android.text.InputType
 import android.view.View
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import android.widget.GridLayout
+import android.widget.TextView
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.BitmapFactory
+import java.io.FileOutputStream
+import android.graphics.drawable.GradientDrawable
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -31,7 +40,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,14 +73,68 @@ class MainActivity : AppCompatActivity() {
     private var pendingQuality = AudioQuality.HIGH
     private var tmpFile: File? = null
 
-    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) startRecording()
-        else toast("Sem permissão de microfone. Conceda em Configurações → Apps → VoiceVault.")
+    private val selectProfilePhoto = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val target = File(filesDir, "profile_avatar.jpg")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                } ?: error("Não foi possível abrir a imagem")
+                loadProfile()
+            } catch (e: Exception) {
+                toast("Não foi possível salvar a foto.")
+            }
+        }
+    }
+
+    private fun loadProfile() {
+        b.profileName.text = prefs.getString("profile_name", "usuario") ?: "usuario"
+        val photo = File(filesDir, "profile_avatar.jpg")
+        if (photo.isFile) {
+            val bitmap = BitmapFactory.decodeFile(photo.absolutePath)
+            if (bitmap != null) b.profilePhoto.setImageBitmap(bitmap)
+        }
+    }
+
+    private fun editProfileName() {
+        promptText("Nome de usuário", "Seu nome", b.profileName.text.toString()) { name ->
+            prefs.edit().putString("profile_name", name).apply()
+            b.profileName.text = name
+        }
+    }
+
+    private var startAfterMicPermission = false
+    private var awaitingRecorderStart = false
+    private var lastRecordTapElapsed = 0L
+
+    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) {
+            if (startAfterMicPermission) maybeStartRecording()
+        } else {
+            toast("Microfone não autorizado. A gravação ficará indisponível até você permitir.")
+        }
+        startAfterMicPermission = false
     }
 
     private val askNotif = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        // negar notificação não impede a gravação; só some o indicador
+        // Notificações são opcionais; a gravação pode começar sem essa autorização.
         startRecording()
+    }
+
+    private fun requestMicrophoneOnFirstLaunch() {
+        if (RecorderService.hasMicPermission(this)) return
+        if (prefs.getBoolean("asked_microphone_onboarding", false)) return
+        prefs.edit().putBoolean("asked_microphone_onboarding", true).apply()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Permitir acesso ao microfone?")
+            .setMessage("O Gravador Smart precisa do microfone somente para gravar seus áudios. Você pode recusar e continuar usando outras funções.")
+            .setPositiveButton("Continuar") { _, _ ->
+                askMic.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            .setNegativeButton("Agora não", null)
+            .show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,9 +147,13 @@ class MainActivity : AppCompatActivity() {
         updateFormatButton()
         updateQualityLabel()
 
+        val currentTheme = prefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        if (AppCompatDelegate.getDefaultNightMode() != currentTheme) AppCompatDelegate.setDefaultNightMode(currentTheme)
+        loadProfile()
         setupLists()
         setupButtons()
         observeData()
+        if (savedInstanceState == null) b.root.post { requestMicrophoneOnFirstLaunch() }
     }
 
     override fun onResume() {
@@ -110,14 +180,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
+        b.btnPdfs.setOnClickListener { startActivity(Intent(this, PdfActivity::class.java)) }
+        b.profilePhoto.setOnClickListener { selectProfilePhoto.launch("image/*") }
+        b.profilePhotoEdit.setOnClickListener { selectProfilePhoto.launch("image/*") }
+        b.profileName.setOnClickListener { editProfileName() }
         b.btnRecord.setOnClickListener { toggleRecording() }
         b.btnPauseResume.setOnClickListener { togglePauseResume() }
-        b.btnMarker.setOnClickListener { addMarker() }
         b.btnQuality.setOnClickListener { chooseQuality() }
         b.btnAddFolder.setOnClickListener { promptText(
             title = "Nova pasta", hint = "Nome da pasta", prefill = "",
         ) { name -> createFolder(name) } }
         b.btnFormat.setOnClickListener { chooseFormat() }
+        b.btnTheme.setOnClickListener { chooseTheme() }
     }
 
     private fun observeData() {
@@ -147,32 +221,73 @@ class MainActivity : AppCompatActivity() {
         currentFolderFlow.value = id
     }
 
-    /** Chips de pastas no topo (estilo da referência): seleção ao tocar, menu ao segurar. */
     private fun rebuildFolderChips(folders: List<FolderCount>) {
-        val group = b.folderChips
-        group.check(group.childCount - 1) // limpa seleção sem disparar listener
-        group.removeAllViews()
-        val root = com.google.android.material.chip.Chip(this).apply {
-            text = "🏠 Raiz"; isCheckable = true; tag = null
-            setOnClickListener { selectFolder(null) }
-        }
-        group.addView(root)
-        folders.forEach { f ->
-            val chip = com.google.android.material.chip.Chip(this).apply {
-                text = "📁 ${f.name} (${f.recordingCount})"
-                isCheckable = true; tag = f.id
-                setOnClickListener { selectFolder(f.id) }
-                setOnLongClickListener { showFolderMenu(f); true }
+        val grid = b.folderGrid
+        grid.removeAllViews()
+        val items = listOf(FolderCount(-1L, "Raiz", "#DB797E", 0L, 0)) + folders
+        items.forEachIndexed { index, folder ->
+            val folderId = if (folder.id == -1L) null else folder.id
+            val selected = currentFolderId == folderId
+            val color = Color.parseColor(folder.colorHex)
+            val card = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(16.dp(), 18.dp(), 12.dp(), 18.dp())
+                minimumHeight = 84.dp()
+                background = GradientDrawable().apply {
+                    cornerRadius = 18.dp().toFloat()
+                    setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(color, if (selected) 58 else 28))
+                    setStroke(if (selected) 2.dp() else 1.dp(),
+                        androidx.core.graphics.ColorUtils.setAlphaComponent(color, if (selected) 255 else 70))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { selectFolder(folderId); rebuildFolderChips(folders) }
+                if (folderId != null) setOnLongClickListener { showFolderMenu(folder); true }
             }
-            group.addView(chip)
-        }
-        // marca a pasta atual
-        for (i in 0 until group.childCount) {
-            val c = group.getChildAt(i) as com.google.android.material.chip.Chip
-            if (c.tag == currentFolderId || (currentFolderId == null && c.tag == null)) {
-                group.check(c.id); c.isChecked = true
+            val foregroundColor = com.google.android.material.color.MaterialColors.getColor(
+                card, com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
+            card.addView(TextView(this).apply {
+                text = folder.name
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(foregroundColor)
+                background = null
+                includeFontPadding = false
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            card.addView(TextView(this).apply {
+                text = if (folderId == null) "Sem pasta" else if (folder.recordingCount == 1) "1 áudio" else "${folder.recordingCount} áudios"
+                textSize = 13f
+                setTextColor(foregroundColor)
+                alpha = 0.75f
+                background = null
+                includeFontPadding = false
+                setPadding(0, 6.dp(), 0, 0)
+            })
+            val params = GridLayout.LayoutParams(
+                GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f)).apply {
+                width = 0
+                height = GridLayout.LayoutParams.WRAP_CONTENT
+                setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
             }
+            grid.addView(card, params)
         }
+    }
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    private fun chooseTheme() {
+        val modes = intArrayOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
+            AppCompatDelegate.MODE_NIGHT_NO, AppCompatDelegate.MODE_NIGHT_YES)
+        val names = arrayOf("Automático (sistema)", "Claro", "Escuro")
+        val current = modes.indexOf(AppCompatDelegate.getDefaultNightMode()).coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Aparência")
+            .setSingleChoiceItems(names, current) { dialog, which ->
+                prefs.edit().putInt("theme_mode", modes[which]).apply()
+                AppCompatDelegate.setDefaultNightMode(modes[which])
+                dialog.dismiss()
+            }.show()
     }
 
     private fun createFolder(name: String) {
@@ -184,6 +299,7 @@ class MainActivity : AppCompatActivity() {
             val id = db.folderDao().insert(Folder(name = name))
             selectFolder(id)
             toast("Pasta \"$name\" criada.")
+            chooseFolderColor(id)
         }
     }
 
@@ -194,7 +310,7 @@ class MainActivity : AppCompatActivity() {
     // ---------- Pastas: renomear / excluir ----------
 
     private fun showFolderMenu(folder: FolderCount) {
-        val options = arrayOf("✏ Renomear pasta", "🗑 Excluir pasta")
+        val options = arrayOf("✏ Renomear pasta", "🎨 Alterar cor", "🗑 Excluir pasta")
         android.app.AlertDialog.Builder(this)
             .setTitle("📁 ${folder.name}")
             .setItems(options) { _, which ->
@@ -202,10 +318,23 @@ class MainActivity : AppCompatActivity() {
                     0 -> promptText("Renomear pasta", "Novo nome", folder.name) { newName ->
                         renameFolder(folder.id, newName)
                     }
-                    1 -> confirmDeleteFolder(folder)
+                    1 -> chooseFolderColor(folder.id)
+                    2 -> confirmDeleteFolder(folder)
                 }
             }
             .show()
+    }
+
+    private fun chooseFolderColor(id: Long) {
+        val colors = arrayOf("#DB797E", "#459FE1", "#AE72DE", "#46B99B", "#E8B34F", "#E56BB0")
+        val names = arrayOf("Coral", "Azul", "Roxo", "Verde", "Amarelo", "Rosa")
+        android.app.AlertDialog.Builder(this).setTitle("Cor da pasta")
+            .setItems(names) { _, choice ->
+                lifecycleScope.launch {
+                    val folder = db.folderDao().byId(id)
+                    if (folder != null) db.folderDao().update(folder.copy(colorHex = colors[choice]))
+                }
+            }.show()
     }
 
     private fun renameFolder(id: Long, newName: String) {
@@ -294,30 +423,64 @@ class MainActivity : AppCompatActivity() {
 
     private fun doSaveToDevice(id: Long, title: String) {
         lifecycleScope.launch {
-            val r = db.recordingDao().byId(id) ?: return@launch
-            val fmt = AudioFormat.fromName(r.format)
-            val file = store.findExisting(id) ?: run { toast("Arquivo não encontrado."); return@launch }
-            val safeName = title.replace(Regex("[^A-Za-z0-9 _-.]"), "_") + "." + fmt.ext
-            val uri = Exporter.saveToDevice(this@MainActivity, file, safeName, fmt.mime)
-            if (uri != null) toast("Salvo em Download/VoiceVault ✅\nAbra o gerenciador de arquivos ou a app Música/Downloads.")
-            else toast("Falha ao salvar no aparelho.")
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val recording = db.recordingDao().byId(id)
+                        ?: return@withContext "Gravação não encontrada."
+                    val fmt = AudioFormat.fromName(recording.format)
+                    val source = store.findExisting(id)
+                        ?: return@withContext "Arquivo de áudio não encontrado."
+                    val safeBase = title.replace(Regex("[^A-Za-z0-9 _.-]"), "_")
+                        .trim().ifEmpty { "Gravacao_$id" }.take(90)
+                    val name = "$safeBase.${fmt.ext}"
+                    if (Exporter.saveToDevice(applicationContext, source, name, fmt.mime) == null)
+                        "Falha ao exportar. Confira o espaço livre e as permissões."
+                    else null
+                }
+                if (result == null)
+                    toast("Áudio salvo em Downloads/Gravador Smart.")
+                else toast(result)
+            } catch (e: Exception) {
+                toast("Não foi possível salvar em Downloads.")
+            }
         }
     }
 
     private fun showMoveDialog(recordingId: Long) {
         lifecycleScope.launch {
-            val folders = mutableListOf<Pair<String, Long?>>("🏠 Raiz" to null)
-            folders += db.folderDao().listWithCount().map { it.name to it.id }
-            val names = folders.map { it.first }.toTypedArray()
+            val recording = db.recordingDao().byId(recordingId)
+            if (recording == null) {
+                toast("Gravação não encontrada.")
+                return@launch
+            }
+            val destinations = listOf<Pair<String, Long?>>("Raiz (sem pasta)" to null) +
+                db.folderDao().listWithCount().map { it.name to it.id }
             android.app.AlertDialog.Builder(this@MainActivity)
-                .setTitle("Mover para…")
-                .setItems(names) { _, i ->
-                    launch {
-                        db.recordingDao().moveToFolder(recordingId, folders[i].second)
-                        toast("Gravação movida.")
+                .setTitle("Mover para qual pasta?")
+                .setSingleChoiceItems(
+                    destinations.map { it.first }.toTypedArray(),
+                    destinations.indexOfFirst { it.second == recording.folderId }
+                ) { dialog, selected ->
+                    dialog.dismiss()
+                    val target = destinations[selected]
+                    lifecycleScope.launch {
+                        try {
+                            val changed = db.recordingDao().moveToFolder(recordingId, target.second)
+                            if (changed == 0) {
+                                toast("Não foi possível mover: gravação não encontrada.")
+                            } else {
+                                selectFolder(target.second)
+                                queryFlow.value = null
+                                b.search.setText("")
+                                val currentFolders = db.folderDao().listWithCount()
+                                rebuildFolderChips(currentFolders)
+                                toast("Áudio movido para ${target.first}.")
+                            }
+                        } catch (e: Exception) {
+                            toast("Erro ao mover o áudio. Tente novamente.")
+                        }
                     }
-                }
-                .show()
+                }.setNegativeButton("Cancelar", null).show()
         }
     }
 
@@ -383,13 +546,21 @@ class MainActivity : AppCompatActivity() {
     // ---------- Gravação via serviço em segundo plano ----------
 
     private fun toggleRecording() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRecordTapElapsed < 850L) return
+        lastRecordTapElapsed = now
+        if (awaitingRecorderStart) return
         if (isRecordingActive()) stopServiceRecording() else maybeStartRecording()
     }
 
     private fun isRecordingActive(): Boolean = LastRecord.result is LastRecord.Recording
 
     private fun maybeStartRecording() {
-        if (!RecorderService.hasMicPermission(this)) { askMic.launch(Manifest.permission.RECORD_AUDIO); return }
+        if (!RecorderService.hasMicPermission(this)) {
+            startAfterMicPermission = true
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED) {
@@ -399,10 +570,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
+        if (awaitingRecorderStart || isRecordingActive()) return
+        awaitingRecorderStart = true
+        b.btnRecord.isEnabled = false
+        pausedTotalMs = 0L
+        pauseStartedAt = 0L
         pendingFolder = currentFolderId
         pendingFormat = chosenFormat
         pendingQuality = chosenQuality
-        val tmp = File(cacheDir, "rec_tmp.${pendingFormat.ext}").also { it.delete() }
+        val tmp = File(cacheDir, "rec_tmp_${UUID.randomUUID()}.${pendingFormat.ext}")
         tmpFile = tmp
         recordStartMs = System.currentTimeMillis()
 
@@ -410,18 +586,47 @@ class MainActivity : AppCompatActivity() {
             putExtra(RecorderService.EXTRA_OUTPUT, tmp.absolutePath)
             putExtra(RecorderService.EXTRA_FORMAT, pendingFormat.name)
             putExtra(RecorderService.EXTRA_QUALITY, pendingQuality.name)
+            putExtra(RecorderService.EXTRA_HAS_FOLDER, pendingFolder != null)
+            pendingFolder?.let { putExtra(RecorderService.EXTRA_FOLDER, it) }
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 startForegroundService(intent) else startService(intent)
         } catch (e: Exception) {
+            awaitingRecorderStart = false
+            b.btnRecord.isEnabled = true
             toast("Falha ao iniciar gravação: ${e.message}")
             return
         }
-        updateRecordingUi(true)
+        b.statusLabel.text = "Iniciando gravação…"
+        confirmRecorderStarted(0)
+    }
+
+    private fun confirmRecorderStarted(attempt: Int) {
+        b.root.postDelayed({
+            when (val state = LastRecord.result) {
+                is LastRecord.Recording -> {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    updateRecordingUi(true)
+                }
+                is LastRecord.Fail -> {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    checkStoppedRecord()
+                }
+                else -> if (attempt < 24) confirmRecorderStarted(attempt + 1) else {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    syncRecordingState()
+                    toast("Gravação não iniciada. Verifique a permissão e tente novamente.")
+                }
+            }
+        }, 150L)
     }
 
     private fun stopServiceRecording() {
+        if (awaitingRecorderStart) return
         startService(Intent(this, RecorderService::class.java).setAction(RecorderService.ACTION_STOP))
         // Aguarda o serviço parar (onDestroy grava LastRecord.Stopped) e então salva.
         updateRecordingUi(false)
@@ -442,25 +647,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateRecordingUi(recording: Boolean) {
-        b.btnRecord.text = if (recording) "⏹ Parar" else "● Gravar"
+        val state = LastRecord.result as? LastRecord.Recording
+        b.btnRecord.text = if (recording) "■" else "🎙"
         b.recDot.visibility = if (recording) View.VISIBLE else View.INVISIBLE
-        b.statusLabel.text = if (recording) "Gravando…" else ""
+        b.statusLabel.text = if (state?.paused == true) "Pausado" else if (recording) "Gravando…" else ""
         b.btnPauseResume.isEnabled = recording
-        b.btnMarker.isEnabled = recording
+        b.btnPauseResume.text = if (state?.paused == true) "Retomar" else "Pausar"
         b.wave.setActive(recording)
-        if (recording) startWave() else stopWave()
         timer?.cancel()
         if (recording) {
-            timer = object : CountDownTimer(Long.MAX_VALUE, 500) {
-                override fun onTick(ms: Long) {
-                    val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
-                    b.timerLabel.text = formatHMS(max(0, elapsed))
-                }
+            timer = object : CountDownTimer(Long.MAX_VALUE, 250) {
+                override fun onTick(ms: Long) { refreshRecordingTimer() }
                 override fun onFinish() {}
             }.start()
+            refreshRecordingTimer()
         } else {
             b.timerLabel.text = "00:00:00"
         }
+    }
+
+    private fun elapsedRecordingMs(st: LastRecord.Recording): Long {
+        val now = SystemClock.elapsedRealtime()
+        val pausedNow = if (st.paused && st.pauseStartedElapsedMs > 0L)
+            now - st.pauseStartedElapsedMs else 0L
+        return (now - st.startedElapsedMs - st.pausedElapsedMs - pausedNow).coerceAtLeast(0L)
+    }
+
+    private fun refreshRecordingTimer() {
+        val st = LastRecord.result as? LastRecord.Recording ?: return
+        b.timerLabel.text = formatHMS(elapsedRecordingMs(st))
+        val label = if (st.paused) "Retomar" else "Pausar"
+        if (b.btnPauseResume.text.toString() != label) b.btnPauseResume.text = label
+        b.statusLabel.text = if (st.paused) "Pausado" else "Gravando…"
     }
 
     private fun formatHMS(ms: Long): String {
@@ -470,34 +688,19 @@ class MainActivity : AppCompatActivity() {
 
     // ---- forma de onda ----
     private val micLevel = MicLevel { level -> runOnUiThread { b.wave.push(level) } }
-    private fun startWave() = micLevel.start()
-    private fun stopWave() = micLevel.stop()
+    private fun startWave() = b.wave.setActive(true)
+    private fun stopWave() = b.wave.setActive(false)
 
     // ---- pausar / retomar e marcadores ----
     private var pausedTotalMs = 0L
     private var pauseStartedAt = 0L
 
     private fun togglePauseResume() {
-        val st = LastRecord.result as? LastRecord.Recording ?: return
-        val action = if (st.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
+        val state = LastRecord.result as? LastRecord.Recording ?: return
+        val action = if (state.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
         startService(Intent(this, RecorderService::class.java).setAction(action))
-        if (st.paused) { pausedTotalMs += System.currentTimeMillis() - pauseStartedAt
-            b.btnPauseResume.text = "⏸ Pausar"; updateStatusPaused(false) }
-        else { pauseStartedAt = System.currentTimeMillis()
-            b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
+        // UI reads the service-confirmed state on the next timer tick.
     }
-
-    private fun updateStatusPaused(paused: Boolean) {
-        b.statusLabel.text = if (paused) "Pausado" else "Gravando…"
-        if (paused) stopWave() else startWave()
-    }
-
-    private fun addMarker() {
-        val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
-        markers.add(formatHMS(max(0, elapsed)))
-        toast("Marcador em ${formatHMS(max(0, elapsed))}")
-    }
-    private val markers = mutableListOf<String>()
 
     /** Sincroniza a UI quando voltamos ao app com gravação em andamento (ex.: tela apagada). */
     private fun syncRecordingState() {
@@ -506,47 +709,27 @@ class MainActivity : AppCompatActivity() {
             recordStartMs = st.startedAt
             pendingFormat = AudioFormat.fromName(st.format)
             updateRecordingUi(true)
-            if (st.paused) { b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
-            else { b.btnPauseResume.text = "⏸ Pausar" }
+            if (st.paused) { b.btnPauseResume.text = "Retomar"; b.statusLabel.text = "Pausado" }
+            else { b.btnPauseResume.text = "Pausar" }
         } else if (!isRecordingActive()) {
             updateRecordingUi(false)
         }
     }
 
-    /** Se o serviço terminou, pega o resultado e salva a gravação no banco. */
+    /** The foreground service is responsible for persisting completed recordings. */
     private fun checkStoppedRecord() {
-        val st = LastRecord.result
-        if (st is LastRecord.Fail) {
-            LastRecord.result = null
-            toast(st.message)
-            syncRecordingState()
-            return
-        }
-        if (st !is LastRecord.Stopped) return
-        LastRecord.result = null
-        val file = File(st.outPath)
-        if (!file.exists() || file.length() == 0L) {
-            toast("Gravação vazia — nada salvo.")
-            return
-        }
-        lifecycleScope.launch {
-            val fmt = pendingFormat
-            val id = db.recordingDao().insert(
-                Recording(
-                    title = "Gravação " + SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
-                        .format(Date(recordStartMs)),
-                    folderId = pendingFolder,
-                    durationMs = max(st.durationMs, 100),
-                    sizeBytes = file.length(),
-                    format = fmt.name,
-                )
-            )
-            val dest = store.fileFor(id, fmt)
-            file.renameTo(dest)
-            db.recordingDao().byId(id)?.let { r ->
-                db.recordingDao().update(r.copy(sizeBytes = dest.length()))
+        when (val state = LastRecord.result) {
+            is LastRecord.Fail -> {
+                LastRecord.result = null
+                toast(state.message)
+                syncRecordingState()
             }
-            toast("Salva! (${dest.length() / 1024} KB, ${fmt.name})")
+            is LastRecord.Stopped -> {
+                LastRecord.result = null
+                toast("Gravação finalizada e salva.")
+                syncRecordingState()
+            }
+            else -> Unit
         }
     }
 

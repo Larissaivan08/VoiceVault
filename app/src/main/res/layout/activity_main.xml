@@ -9,23 +9,98 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="20dp"
+        android:background="?attr/colorSurface">
 
-        <!-- Cabeçalho -->
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🎙 Gravador de Áudio"
-            android:textAppearance="?textAppearanceHeadlineSmall"
-            android:textStyle="bold" />
-
+            android:orientation="horizontal"
+            android:layout_marginBottom="14dp">
+            <Button
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="52dp"
+                android:text="Áudios"
+                android:enabled="false"/>
+            <Button
+                android:id="@+id/btnPdfs"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="52dp"
+                android:text="PDFs"/>
+        </LinearLayout>
+        <!-- Perfil local: foto da galeria, nome editável e selo decorativo -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="14dp">
+            <FrameLayout
+                android:layout_width="76dp"
+                android:layout_height="76dp">
+                <ImageView
+                    android:id="@+id/profilePhoto"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/profile_circle"
+                    android:clipToOutline="true"
+                    android:scaleType="centerCrop"
+                    android:contentDescription="Escolher foto de perfil na galeria"/>
+                <TextView
+                    android:id="@+id/profilePhotoEdit"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="bottom|end"
+                    android:background="@drawable/profile_edit_circle"
+                    android:gravity="center"
+                    android:text="+"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:textSize="20sp"
+                    android:contentDescription="Alterar foto"/>
+            </FrameLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:id="@+id/profileName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxWidth="200dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="usuario"
+                    android:textAppearance="?textAppearanceTitleLarge"
+                    android:textStyle="bold"
+                    android:contentDescription="Toque para editar nome de usuário"/>
+                <ImageView
+                    android:layout_width="23dp"
+                    android:layout_height="23dp"
+                    android:layout_marginStart="7dp"
+                    android:src="@drawable/ic_profile_badge"
+                    android:contentDescription="Selo azul decorativo"/>
+            </LinearLayout>
+        </LinearLayout>
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gravador Smart"
+            android:textAppearance="?textAppearanceHeadlineMedium"
+            android:textStyle="bold"/>
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Grave suas ideias, aulas, reuniões e muito mais"
+            android:text="Grave suas ideias, aulas, reuniões e muito mais."
             android:textAppearance="?textAppearanceBodyMedium"
-            android:textColor="?android:textColorSecondary" />
+            android:textColor="?android:textColorSecondary"/>
 
         <!-- Painel principal de gravação (card branco) -->
         <com.google.android.material.card.MaterialCardView
@@ -40,22 +115,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="16dp">
-
-                <!-- Chips de pastas (horizontal, rolável) -->
-                <HorizontalScrollView
-                    android:id="@+id/folderScroll"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none">
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/folderChips"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:singleLine="true"
-                        app:singleSelection="true"
-                        app:selectionRequired="true" />
-                </HorizontalScrollView>
 
                 <!-- Status -->
                 <LinearLayout
@@ -98,7 +157,7 @@
                     android:layout_marginTop="10dp"
                     android:gravity="center"
                     android:text="00:00:00"
-                    android:textSize="42sp"
+                    android:textSize="48sp"
                     android:textStyle="bold"
                     android:letterSpacing="0.05" />
 
@@ -106,44 +165,48 @@
                 <com.example.voicevault.io.WaveView
                     android:id="@+id/wave"
                     android:layout_width="match_parent"
-                    android:layout_height="90dp"
+                    android:layout_height="110dp"
                     android:layout_marginTop="6dp" />
 
-                <!-- Botões -->
+                <Button
+                    android:id="@+id/btnRecord"
+                    style="@style/Widget.Material3.Button"
+                    android:layout_width="160dp"
+                    android:layout_height="160dp"
+                    android:layout_gravity="center"
+                    android:layout_marginTop="16dp"
+                    android:backgroundTint="@color/record_coral"
+                    android:text="🎙"
+                    android:textSize="46sp"
+                    android:contentDescription="Iniciar ou parar gravação"
+                    app:cornerRadius="80dp" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:layout_marginTop="14dp">
-
+                    android:orientation="vertical"
+                    android:layout_marginTop="16dp">
                     <Button
                         android:id="@+id/btnPauseResume"
                         style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="⏸ Pausar"
-                        android:enabled="false" />
-
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:singleLine="true"
+                        android:maxLines="1"
+                        android:textAllCaps="false"
+                        android:textSize="14sp"
+                        android:text="Pausar"
+                        app:cornerRadius="20dp"
+                        android:enabled="false"/>
                     <Button
-                        android:id="@+id/btnRecord"
-                        style="@style/Widget.Material3.Button"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="8dp"
-                        android:backgroundTint="#FE5752"
-                        android:text="● Gravar" />
-
-                    <Button
-                        android:id="@+id/btnMarker"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="＋ Marcador"
-                        android:enabled="false" />
+                        android:id="@+id/btnTheme"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="6dp"
+                        android:text="Tema"
+                        android:singleLine="true"
+                        android:textAllCaps="false"/>
                 </LinearLayout>
 
                 <!-- Qualidade -->
@@ -167,32 +230,28 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Seção Minhas gravações -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginTop="18dp">
-
-            <TextView
-                android:id="@+id/listTitle"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="wrap_content"
-                android:text="Minhas gravações"
-                android:textAppearance="?textAppearanceTitleMedium"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/btnAddFolder"
+        <LinearLayout android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="horizontal"
+            android:gravity="center_vertical" android:layout_marginTop="20dp">
+            <TextView android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="Pastas"
+                android:textAppearance="?textAppearanceTitleLarge" android:textStyle="bold"/>
+            <Button android:id="@+id/btnAddFolder"
                 style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="0dp"
-                android:text="＋ Nova pasta" />
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="+ Nova pasta"/>
         </LinearLayout>
-
+        <GridLayout android:id="@+id/folderGrid"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:columnCount="2" android:alignmentMode="alignMargins"
+            android:useDefaultMargins="false"/>
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/folderChips" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:visibility="gone"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="Arquivos da pasta" android:textStyle="bold"
+            android:textAppearance="?textAppearanceTitleMedium"
+            android:layout_marginTop="18dp"/>
         <EditText
             android:id="@+id/search"
             android:layout_width="match_parent"

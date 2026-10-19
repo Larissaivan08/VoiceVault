@@ -94,7 +94,7 @@ interface RecordingDao {
 
     /** Move a gravação para outra pasta (null = Raiz). */
     @Query("UPDATE recordings SET folderId = :folderId WHERE id = :recordingId")
-    suspend fun moveToFolder(recordingId: Long, folderId: Long?)
+    suspend fun moveToFolder(recordingId: Long, folderId: Long?): Int
 
     /** Total de gravações em todas as pastas. */
     @Query("SELECT COUNT(*) FROM recordings")

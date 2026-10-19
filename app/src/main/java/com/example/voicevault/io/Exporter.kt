@@ -30,28 +30,41 @@ object Exporter {
      * permissão de armazenamento no Android 10+. Retorna a URI pública criada.
      */
     fun saveToDevice(context: Context, file: File, displayName: String, mime: String): Uri? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
-                put(MediaStore.Downloads.MIME_TYPE, mime)
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/VoiceVault")
-                put(MediaStore.Downloads.IS_PENDING, 1)
+        if (!file.isFile || !file.canRead()) return null
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/Gravador Smart")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return@runCatching null
+                try {
+                    val out = resolver.openOutputStream(uri)
+                        ?: error("Não foi possível abrir o destino")
+                    out.use { output -> file.inputStream().use { it.copyTo(output) } }
+                    val publish = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+                    if (resolver.update(uri, publish, null, null) < 1)
+                        error("Não foi possível concluir a exportação")
+                    uri
+                } catch (e: Exception) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    null
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloads = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS)
+                val folder = File(downloads, "Gravador Smart")
+                if (!folder.isDirectory && !folder.mkdirs())
+                    error("Não foi possível criar a pasta Downloads")
+                val dest = File(folder, displayName)
+                file.copyTo(dest, overwrite = true)
+                Uri.fromFile(dest)
             }
-            val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-            resolver.openOutputStream(uri)?.use { out -> file.inputStream().copyTo(out) }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            uri
-        } else {
-            // Android 8/9: cópia direta para Downloads (WRITE_EXTERNAL_STORAGE pedida antes)
-            @Suppress("DEPRECATION")
-            val dl = File(android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS), "VoiceVault").apply { mkdirs() }
-            val dest = File(dl, displayName)
-            file.copyTo(dest, overwrite = true)
-            Uri.fromFile(dest)
-        }
+        }.getOrNull()
     }
 }

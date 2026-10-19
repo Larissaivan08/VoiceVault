@@ -2,108 +2,62 @@ package com.example.voicevault.io
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
+import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.random.Random
+import kotlin.math.sin
 
-/**
- * Visualizador de forma de onda estilo "gravador": barras verticais que
- * acompanham o nível do microfone em tempo real (durante a gravação) ou
- * um padrão fixo (quando parado).
- */
+/** Decorative looping waveform; audio is recorded independently by RecorderService. */
 class WaveView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
-
-    private val bars = ArrayDeque<Float>()
-    private var active = false
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#1783FF")
-        strokeWidth = 6f
         strokeCap = Paint.Cap.ROUND
+        strokeWidth = 4f * resources.displayMetrics.density
     }
+    private var active = false
+    private var phase = 0.0
 
-    /** Alimenta um sample de amplitude normalizado (0..1). */
-    fun push(level: Float) {
-        bars.addLast(level.coerceIn(0.02f, 1f))
-        while (bars.size > width / 14) bars.removeFirst()
-        invalidate()
-    }
+    fun push(level: Float) { /* Kept for compatibility; visual is decorative. */ }
 
-    fun setActive(a: Boolean) {
-        active = a
-        if (!a) bars.clear()
+    fun setActive(enabled: Boolean) {
+        active = enabled
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (bars.isEmpty()) return
-        val n = bars.size
-        val step = width.toFloat() / n
-        for ((i, v) in bars.withIndex()) {
-            val x = i * step + step / 2
-            val h = v * height * 0.9f
-            canvas.drawLine(x, height / 2f - h / 2, x, height / 2f + h / 2, paint)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+        val count = 55
+        val gap = w / count
+        for (i in 0 until count) {
+            val xNorm = i.toFloat() / (count - 1)
+            val envelope = sin(Math.PI * xNorm).toFloat().coerceAtLeast(0f)
+            val pulse = abs(sin(i * 0.23 + phase) * sin(i * 0.11 - phase * 0.55))
+            val length = (0.06 + (0.72 * envelope * (0.35 + pulse * 0.65))) * h
+            val x = (i + 0.5f) * gap
+            paint.color = android.graphics.Color.rgb(
+                239, (90 + 75 * envelope).toInt(), (100 + 38 * xNorm).toInt())
+            paint.alpha = (80 + 175 * envelope).toInt().coerceIn(0,255)
+            canvas.drawLine(x, h / 2f - length.toFloat() / 2f,
+                x, h / 2f + length.toFloat() / 2f, paint)
         }
+        phase += if (active) 0.095 else 0.045
+        postInvalidateDelayed(40L)
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        // The View stops receiving frame callbacks when detached.
     }
 }
 
-/**
- * Captura de nível de microfone em paralelo à gravação (para alimentar o WaveView).
- * Usa AudioRecord separado — só para visualização; o áudio gravado vem do MediaRecorder.
- */
+/** Legacy no-op visual level collector. The waveform no longer opens a second mic. */
 class MicLevel(private val onLevel: (Float) -> Unit) {
-    private var thread: Thread? = null
-    @Volatile private var running = false
-
-    fun start() {
-        if (running) return
-        running = true
-        thread = Thread {
-            val rate = 8000
-            val bufSize = android.media.AudioRecord.getMinBufferSize(
-                rate, android.media.AudioFormat.CHANNEL_IN_MONO,
-                android.media.AudioFormat.ENCODING_PCM_16BIT
-            ).coerceAtLeast(2048)
-            val rec = try {
-                android.media.AudioRecord(
-                    android.media.MediaRecorder.AudioSource.MIC,
-                    rate, android.media.AudioFormat.CHANNEL_IN_MONO,
-                    android.media.AudioFormat.ENCODING_PCM_16BIT, bufSize
-                )
-            } catch (e: Exception) { null }
-            if (rec == null || rec.state != android.media.AudioRecord.STATE_INITIALIZED) {
-                // fallback: animação pseudo-aleatória (visual apenas)
-                while (running) {
-                    onLevel(Random.nextFloat() * 0.85f + 0.1f)
-                    Thread.sleep(120)
-                }
-                return@Thread
-            }
-            val buf = ShortArray(bufSize / 2)
-            rec.startRecording()
-            while (running) {
-                val read = rec.read(buf, 0, buf.size)
-                if (read > 0) {
-                    var sum = 0.0
-                    for (i in 0 until read) sum += (buf[i].toDouble() * buf[i])
-                    val rms = Math.sqrt(sum / read) / 32768.0
-                    onLevel(((rms * 6).toFloat()).coerceIn(0.05f, 1f))
-                }
-                Thread.sleep(120)
-            }
-            runCatching { rec.stop() }
-            rec.release()
-        }.also { it.isDaemon = true; it.start() }
-    }
-
-    fun stop() {
-        running = false
-        thread?.interrupt()
-        thread = null
-    }
+    fun start() {}
+    fun stop() {}
 }

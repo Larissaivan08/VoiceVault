@@ -11,3 +11,9 @@ build/
 *.aab
 *.keystore
 !debug.keystore
+
+# Nunca versionar credenciais de assinatura
+*.jks
+*.p12
+keystore.properties
+signing.properties
