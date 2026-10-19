@@ -106,6 +106,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var startAfterMicPermission = false
+    private var awaitingRecorderStart = false
+    private var lastRecordTapElapsed = 0L
 
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         if (allowed) {
@@ -543,6 +545,10 @@ class MainActivity : AppCompatActivity() {
     // ---------- Gravação via serviço em segundo plano ----------
 
     private fun toggleRecording() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastRecordTapElapsed < 850L) return
+        lastRecordTapElapsed = now
+        if (awaitingRecorderStart) return
         if (isRecordingActive()) stopServiceRecording() else maybeStartRecording()
     }
 
@@ -563,6 +569,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
+        if (awaitingRecorderStart || isRecordingActive()) return
+        awaitingRecorderStart = true
+        b.btnRecord.isEnabled = false
         pausedTotalMs = 0L
         pauseStartedAt = 0L
         pendingFolder = currentFolderId
@@ -583,13 +592,40 @@ class MainActivity : AppCompatActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 startForegroundService(intent) else startService(intent)
         } catch (e: Exception) {
+            awaitingRecorderStart = false
+            b.btnRecord.isEnabled = true
             toast("Falha ao iniciar gravação: ${e.message}")
             return
         }
-        updateRecordingUi(true)
+        b.statusLabel.text = "Iniciando gravação…"
+        confirmRecorderStarted(0)
+    }
+
+    private fun confirmRecorderStarted(attempt: Int) {
+        b.root.postDelayed({
+            when (val state = LastRecord.result) {
+                is LastRecord.Recording -> {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    updateRecordingUi(true)
+                }
+                is LastRecord.Fail -> {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    checkStoppedRecord()
+                }
+                else -> if (attempt < 24) confirmRecorderStarted(attempt + 1) else {
+                    awaitingRecorderStart = false
+                    b.btnRecord.isEnabled = true
+                    syncRecordingState()
+                    toast("Gravação não iniciada. Verifique a permissão e tente novamente.")
+                }
+            }
+        }, 150L)
     }
 
     private fun stopServiceRecording() {
+        if (awaitingRecorderStart) return
         startService(Intent(this, RecorderService::class.java).setAction(RecorderService.ACTION_STOP))
         // Aguarda o serviço parar (onDestroy grava LastRecord.Stopped) e então salva.
         updateRecordingUi(false)
