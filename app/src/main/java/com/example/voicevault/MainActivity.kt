@@ -19,6 +19,8 @@ import android.widget.GridLayout
 import android.widget.TextView
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.BitmapFactory
+import java.io.FileOutputStream
 import android.graphics.drawable.GradientDrawable
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -69,6 +71,38 @@ class MainActivity : AppCompatActivity() {
     private var pendingQuality = AudioQuality.HIGH
     private var tmpFile: File? = null
 
+    private val selectProfilePhoto = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val target = File(filesDir, "profile_avatar.jpg")
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                } ?: error("Não foi possível abrir a imagem")
+                loadProfile()
+            } catch (e: Exception) {
+                toast("Não foi possível salvar a foto.")
+            }
+        }
+    }
+
+    private fun loadProfile() {
+        b.profileName.text = prefs.getString("profile_name", "usuario") ?: "usuario"
+        val photo = File(filesDir, "profile_avatar.jpg")
+        if (photo.isFile) {
+            val bitmap = BitmapFactory.decodeFile(photo.absolutePath)
+            if (bitmap != null) b.profilePhoto.setImageBitmap(bitmap)
+        }
+    }
+
+    private fun editProfileName() {
+        promptText("Nome de usuário", "Seu nome", b.profileName.text.toString()) { name ->
+            prefs.edit().putString("profile_name", name).apply()
+            b.profileName.text = name
+        }
+    }
+
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) startRecording()
         else toast("Sem permissão de microfone. Conceda em Configurações → Apps → VoiceVault.")
@@ -91,6 +125,7 @@ class MainActivity : AppCompatActivity() {
 
         val currentTheme = prefs.getInt("theme_mode", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         if (AppCompatDelegate.getDefaultNightMode() != currentTheme) AppCompatDelegate.setDefaultNightMode(currentTheme)
+        loadProfile()
         setupLists()
         setupButtons()
         observeData()
@@ -120,6 +155,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
+        b.profilePhoto.setOnClickListener { selectProfilePhoto.launch("image/*") }
+        b.profilePhotoEdit.setOnClickListener { selectProfilePhoto.launch("image/*") }
+        b.profileName.setOnClickListener { editProfileName() }
         b.btnRecord.setOnClickListener { toggleRecording() }
         b.btnPauseResume.setOnClickListener { togglePauseResume() }
         b.btnMarker.setOnClickListener { addMarker() }
