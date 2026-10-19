@@ -40,6 +40,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 import java.text.SimpleDateFormat
@@ -397,13 +399,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun doSaveToDevice(id: Long, title: String) {
         lifecycleScope.launch {
-            val r = db.recordingDao().byId(id) ?: return@launch
-            val fmt = AudioFormat.fromName(r.format)
-            val file = store.findExisting(id) ?: run { toast("Arquivo não encontrado."); return@launch }
-            val safeName = title.replace(Regex("[^A-Za-z0-9 _-.]"), "_") + "." + fmt.ext
-            val uri = Exporter.saveToDevice(this@MainActivity, file, safeName, fmt.mime)
-            if (uri != null) toast("Salvo em Download/VoiceVault ✅\nAbra o gerenciador de arquivos ou a app Música/Downloads.")
-            else toast("Falha ao salvar no aparelho.")
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val recording = db.recordingDao().byId(id)
+                        ?: return@withContext "Gravação não encontrada."
+                    val fmt = AudioFormat.fromName(recording.format)
+                    val source = store.findExisting(id)
+                        ?: return@withContext "Arquivo de áudio não encontrado."
+                    val safeBase = title.replace(Regex("[^A-Za-z0-9 _.-]"), "_")
+                        .trim().ifEmpty { "Gravacao_$id" }.take(90)
+                    val name = "$safeBase.${fmt.ext}"
+                    if (Exporter.saveToDevice(applicationContext, source, name, fmt.mime) == null)
+                        "Falha ao exportar. Confira o espaço livre e as permissões."
+                    else null
+                }
+                if (result == null)
+                    toast("Áudio salvo em Downloads/Gravador Smart.")
+                else toast(result)
+            } catch (e: Exception) {
+                toast("Não foi possível salvar em Downloads.")
+            }
         }
     }
 
