@@ -105,14 +105,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) startRecording()
-        else toast("Sem permissão de microfone. Conceda em Configurações → Apps → VoiceVault.")
+    private var startAfterMicPermission = false
+
+    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) {
+            if (startAfterMicPermission) maybeStartRecording()
+        } else {
+            toast("Microfone não autorizado. A gravação ficará indisponível até você permitir.")
+        }
+        startAfterMicPermission = false
     }
 
     private val askNotif = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        // negar notificação não impede a gravação; só some o indicador
+        // Notificações são opcionais; a gravação pode começar sem essa autorização.
         startRecording()
+    }
+
+    private fun requestMicrophoneOnFirstLaunch() {
+        if (RecorderService.hasMicPermission(this)) return
+        if (prefs.getBoolean("asked_microphone_onboarding", false)) return
+        prefs.edit().putBoolean("asked_microphone_onboarding", true).apply()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Permitir acesso ao microfone?")
+            .setMessage("O Gravador Smart precisa do microfone somente para gravar seus áudios. Você pode recusar e continuar usando outras funções.")
+            .setPositiveButton("Continuar") { _, _ ->
+                askMic.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            .setNegativeButton("Agora não", null)
+            .show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,6 +151,7 @@ class MainActivity : AppCompatActivity() {
         setupLists()
         setupButtons()
         observeData()
+        if (savedInstanceState == null) b.root.post { requestMicrophoneOnFirstLaunch() }
     }
 
     override fun onResume() {
@@ -528,7 +549,11 @@ class MainActivity : AppCompatActivity() {
     private fun isRecordingActive(): Boolean = LastRecord.result is LastRecord.Recording
 
     private fun maybeStartRecording() {
-        if (!RecorderService.hasMicPermission(this)) { askMic.launch(Manifest.permission.RECORD_AUDIO); return }
+        if (!RecorderService.hasMicPermission(this)) {
+            startAfterMicPermission = true
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED) {
