@@ -6,4 +6,17 @@
     <string name="btn_record">🎙 Gravar</string>
     <string name="btn_new_folder">➕ Nova pasta</string>
     <string name="btn_delete">🗑 Excluir gravação</string>
+    <string name="header_title">🎙 Gravador de Áudio</string>
+    <string name="header_subtitle">Grave suas ideias, aulas, reuniões e muito mais</string>
+    <string name="title_folders">Pastas</string>
+    <string name="title_recordings">Minhas gravações</string>
+    <string name="desc_folder">Pasta de gravações</string>
+    <string name="desc_format">Escolher formato de gravação</string>
+    <string name="desc_timer">Tempo de gravação decorrido</string>
+    <string name="desc_pause">Pausar ou retomar a gravação</string>
+    <string name="desc_record">Iniciar ou parar a gravação</string>
+    <string name="desc_marker">Adicionar marcador na gravação</string>
+    <string name="desc_quality">Alterar qualidade de gravação</string>
+    <string name="desc_new_folder">Criar nova pasta</string>
+    <string name="desc_sort">Ordenar lista de gravações</string>
 </resources>

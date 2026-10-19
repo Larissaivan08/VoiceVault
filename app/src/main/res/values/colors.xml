@@ -11,4 +11,5 @@
     <color name="md_theme_dark_surface">#1A1B1F</color>
     <color name="md_theme_dark_onSurface">#E3E2E6</color>
     <color name="md_theme_dark_error">#FFB4AB</color>
+    <color name="brand_red">#FE5752</color>
 </resources>

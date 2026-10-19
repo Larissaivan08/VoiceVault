@@ -26,9 +26,12 @@ import com.example.voicevault.db.FolderCount
 import com.example.voicevault.db.Recording
 import com.example.voicevault.io.AudioStore
 import com.example.voicevault.io.MicLevel
+import androidx.recyclerview.widget.GridLayoutManager
+import com.example.voicevault.ui.FolderAdapter
 import com.example.voicevault.ui.RecordingAdapter
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import java.io.File
@@ -37,6 +40,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
@@ -49,6 +53,10 @@ class MainActivity : AppCompatActivity() {
     private val currentFolderFlow = MutableStateFlow<Long?>(null)
 
     private lateinit var recordings: RecordingAdapter
+    private lateinit var folders: FolderAdapter
+    private var lastFolderList: List<FolderCount> = emptyList()
+    private var sortKey = "date"   // date | name | size | duration
+    private var sortAsc = false
 
     private var chosenFormat = AudioFormat.M4A
     private var chosenQuality = AudioQuality.HIGH
@@ -56,9 +64,7 @@ class MainActivity : AppCompatActivity() {
     // ---- Gravação (via RecorderService — funciona em segundo plano) ----
     private var timer: CountDownTimer? = null
     private var recordStartMs = 0L
-    private var pendingFolder: Long? = null
-    private var pendingFormat = AudioFormat.M4A
-    private var pendingQuality = AudioQuality.HIGH
+    private var sessionFormat = AudioFormat.M4A
     private var tmpFile: File? = null
 
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
@@ -80,6 +86,9 @@ class MainActivity : AppCompatActivity() {
         chosenQuality = AudioQuality.fromName(prefs.getString("quality", "HIGH"))
         updateFormatButton()
         updateQualityLabel()
+        sortKey = prefs.getString("sortKey", "date")!!
+        sortAsc = prefs.getBoolean("sortAsc", false)
+        b.btnSort.text = "Ordenar: " + if (sortAsc) "mais antigas" else "mais recentes"
 
         setupLists()
         setupButtons()
@@ -88,8 +97,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        syncRecordingState()
-        checkStoppedRecord()
+        refreshRecordingState()
     }
 
     private fun setupLists() {
@@ -99,6 +107,17 @@ class MainActivity : AppCompatActivity() {
         )
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = recordings
+
+        folders = FolderAdapter(
+            onClick = { id -> selectFolder(id) },
+            onLongClick = { f -> showFolderMenu(f) },
+            isSelected = { id -> currentFolderId == id },
+        )
+        b.folderGrid.layoutManager = GridLayoutManager(this, 2)
+        b.folderGrid.adapter = folders
+        b.folderGrid.isNestedScrollingEnabled = true
+
+        b.btnSort.setOnClickListener { chooseSort() }
 
         b.search.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, e: Int) {}
@@ -121,9 +140,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun observeData() {
-        // Painel lateral de pastas (Raiz + pastas com contagem)
+        // Grade de pastas (Raiz + pastas com contagem), independente da gravação
         lifecycleScope.launch {
-            db.folderDao().flowWithCount().collect { list -> rebuildFolderChips(list) }
+            db.folderDao().flowWithCount().collect { list ->
+                lastFolderList = list
+                folders.items = listOf(null) + list
+                updateRecordInFolderLabel()
+            }
         }
         // Lista de gravações: reage à pasta selecionada E à busca, em um único Flow.
         lifecycleScope.launch {
@@ -136,7 +159,9 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 .collect { items ->
-                    recordings.submitList(items)
+                    recordings.submitList(
+                        RecordingAdapter.sorted(items, sortKey, sortAsc)
+                    )
                     b.emptyHint.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
                 }
         }
@@ -145,34 +170,31 @@ class MainActivity : AppCompatActivity() {
     private fun selectFolder(id: Long?) {
         currentFolderId = id
         currentFolderFlow.value = id
+        updateRecordInFolderLabel()
+        folders.notifyDataSetChanged()
     }
 
-    /** Chips de pastas no topo (estilo da referência): seleção ao tocar, menu ao segurar. */
-    private fun rebuildFolderChips(folders: List<FolderCount>) {
-        val group = b.folderChips
-        group.check(group.childCount - 1) // limpa seleção sem disparar listener
-        group.removeAllViews()
-        val root = com.google.android.material.chip.Chip(this).apply {
-            text = "🏠 Raiz"; isCheckable = true; tag = null
-            setOnClickListener { selectFolder(null) }
-        }
-        group.addView(root)
-        folders.forEach { f ->
-            val chip = com.google.android.material.chip.Chip(this).apply {
-                text = "📁 ${f.name} (${f.recordingCount})"
-                isCheckable = true; tag = f.id
-                setOnClickListener { selectFolder(f.id) }
-                setOnLongClickListener { showFolderMenu(f); true }
+    /** Indicação PERSISTENTE e clara de qual pasta vai receber a nova gravação. */
+    private fun updateRecordInFolderLabel() {
+        val name = currentFolderId?.let { id -> lastFolderList.firstOrNull { it.id == id }?.name }
+        b.recordInFolder.text = if (name != null) "📂 Gravando em: $name" else "🏠 Gravando em: Raiz"
+    }
+
+    private fun chooseSort() {
+        val labels = arrayOf("Mais recentes", "Mais antigas", "Nome (A–Z)", "Nome (Z–A)",
+            "Maior tamanho", "Menor tamanho", "Maior duração", "Menor duração")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Ordenar gravações")
+            .setItems(labels) { _, which ->
+                sortKey = when (which) {
+                    0, 1 -> "date"; 2, 3 -> "name"; 4, 5 -> "size"; else -> "duration"
+                }
+                sortAsc = which % 2 == 1 || which in 2..3
+                b.btnSort.text = "Ordenar: " + labels[which]
+                prefs.edit().putString("sortKey", sortKey).putBoolean("sortAsc", sortAsc).apply()
+                currentFolderFlow.value = currentFolderFlow.value // re-emite p/ reordenar
             }
-            group.addView(chip)
-        }
-        // marca a pasta atual
-        for (i in 0 until group.childCount) {
-            val c = group.getChildAt(i) as com.google.android.material.chip.Chip
-            if (c.tag == currentFolderId || (currentFolderId == null && c.tag == null)) {
-                group.check(c.id); c.isChecked = true
-            }
-        }
+            .show()
     }
 
     private fun createFolder(name: String) {
@@ -234,6 +256,7 @@ class MainActivity : AppCompatActivity() {
                     db.recordingDao().inFolderSync(folder.id).forEach { store.delete(it.id) }
                     db.folderDao().deleteById(folder.id)
                     if (currentFolderId == folder.id) selectFolder(null)
+                    folders.notifyDataSetChanged()
                     toast("Pasta excluída.")
                 }
             }
@@ -386,7 +409,7 @@ class MainActivity : AppCompatActivity() {
         if (isRecordingActive()) stopServiceRecording() else maybeStartRecording()
     }
 
-    private fun isRecordingActive(): Boolean = LastRecord.result is LastRecord.Recording
+    private fun isRecordingActive(): Boolean = LiveSession.active
 
     private fun maybeStartRecording() {
         if (!RecorderService.hasMicPermission(this)) { askMic.launch(Manifest.permission.RECORD_AUDIO); return }
@@ -399,17 +422,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startRecording() {
-        pendingFolder = currentFolderId
-        pendingFormat = chosenFormat
-        pendingQuality = chosenQuality
-        val tmp = File(cacheDir, "rec_tmp.${pendingFormat.ext}").also { it.delete() }
+        // Arquivo temporario UNICO por sessao (timestamp+UUID) - nunca reutiliza rec_tmp fixo.
+        val dir = File(cacheDir, "pending").apply { mkdirs() }
+        val tmp = File(dir, "rec_" + System.currentTimeMillis() + "_" +
+            java.util.UUID.randomUUID() + "." + chosenFormat.ext)
         tmpFile = tmp
+        sessionFormat = chosenFormat
         recordStartMs = System.currentTimeMillis()
 
         val intent = Intent(this, RecorderService::class.java).apply {
             putExtra(RecorderService.EXTRA_OUTPUT, tmp.absolutePath)
-            putExtra(RecorderService.EXTRA_FORMAT, pendingFormat.name)
-            putExtra(RecorderService.EXTRA_QUALITY, pendingQuality.name)
+            putExtra(RecorderService.EXTRA_FORMAT, chosenFormat.name)
+            putExtra(RecorderService.EXTRA_QUALITY, chosenQuality.name)
+            putExtra(RecorderService.EXTRA_FOLDER, currentFolderId ?: -1L)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -423,22 +448,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopServiceRecording() {
         startService(Intent(this, RecorderService::class.java).setAction(RecorderService.ACTION_STOP))
-        // Aguarda o serviço parar (onDestroy grava LastRecord.Stopped) e então salva.
+        // O PROPRIO servico finaliza e salva no banco - a Activity so reseta a UI.
         updateRecordingUi(false)
-        pollStoppedRecord(0)
-    }
-
-    /** Tenta buscar o resultado do serviço por alguns segundos após o "Parar". */
-    private fun pollStoppedRecord(attempt: Int) {
-        if (attempt > 20) return // ~5 s de espera máxima
-        b.root.postDelayed({
-            val st = LastRecord.result
-            if (st is LastRecord.Stopped || st is LastRecord.Fail) {
-                if (st is LastRecord.Fail) toast(st.message) else checkStoppedRecord()
-            } else {
-                pollStoppedRecord(attempt + 1)
-            }
-        }, 250)
     }
 
     private fun updateRecordingUi(recording: Boolean) {
@@ -453,7 +464,7 @@ class MainActivity : AppCompatActivity() {
         if (recording) {
             timer = object : CountDownTimer(Long.MAX_VALUE, 500) {
                 override fun onTick(ms: Long) {
-                    val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
+                    val elapsed = System.currentTimeMillis() - LiveSession.startedAt - LiveSession.pausedTotalMs
                     b.timerLabel.text = formatHMS(max(0, elapsed))
                 }
                 override fun onFinish() {}
@@ -478,13 +489,10 @@ class MainActivity : AppCompatActivity() {
     private var pauseStartedAt = 0L
 
     private fun togglePauseResume() {
-        val st = LastRecord.result as? LastRecord.Recording ?: return
-        val action = if (st.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
+        val action = if (LiveSession.paused) RecorderService.ACTION_RESUME else RecorderService.ACTION_PAUSE
         startService(Intent(this, RecorderService::class.java).setAction(action))
-        if (st.paused) { pausedTotalMs += System.currentTimeMillis() - pauseStartedAt
-            b.btnPauseResume.text = "⏸ Pausar"; updateStatusPaused(false) }
-        else { pauseStartedAt = System.currentTimeMillis()
-            b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
+        if (LiveSession.paused) { b.btnPauseResume.text = "⏸ Pausar"; updateStatusPaused(false) }
+        else { b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
     }
 
     private fun updateStatusPaused(paused: Boolean) {
@@ -493,60 +501,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addMarker() {
-        val elapsed = System.currentTimeMillis() - recordStartMs - pausedTotalMs
+        val elapsed = System.currentTimeMillis() - LiveSession.startedAt - LiveSession.pausedTotalMs
         markers.add(formatHMS(max(0, elapsed)))
         toast("Marcador em ${formatHMS(max(0, elapsed))}")
     }
     private val markers = mutableListOf<String>()
 
-    /** Sincroniza a UI quando voltamos ao app com gravação em andamento (ex.: tela apagada). */
-    private fun syncRecordingState() {
-        val st = LastRecord.result
-        if (st is LastRecord.Recording) {
-            recordStartMs = st.startedAt
-            pendingFormat = AudioFormat.fromName(st.format)
+    /** Sincroniza a UI quando voltamos ao app com gravacao em andamento (ex.: tela apagada). */
+    private fun refreshRecordingState() {
+        if (LiveSession.active) {
+            recordStartMs = LiveSession.startedAt
+            sessionFormat = AudioFormat.fromName(LiveSession.format)
+            pausedTotalMs = LiveSession.pausedTotalMs
             updateRecordingUi(true)
-            if (st.paused) { b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
+            if (LiveSession.paused) { b.btnPauseResume.text = "▶ Retomar"; updateStatusPaused(true) }
             else { b.btnPauseResume.text = "⏸ Pausar" }
-        } else if (!isRecordingActive()) {
+        } else {
             updateRecordingUi(false)
-        }
-    }
-
-    /** Se o serviço terminou, pega o resultado e salva a gravação no banco. */
-    private fun checkStoppedRecord() {
-        val st = LastRecord.result
-        if (st is LastRecord.Fail) {
-            LastRecord.result = null
-            toast(st.message)
-            syncRecordingState()
-            return
-        }
-        if (st !is LastRecord.Stopped) return
-        LastRecord.result = null
-        val file = File(st.outPath)
-        if (!file.exists() || file.length() == 0L) {
-            toast("Gravação vazia — nada salvo.")
-            return
-        }
-        lifecycleScope.launch {
-            val fmt = pendingFormat
-            val id = db.recordingDao().insert(
-                Recording(
-                    title = "Gravação " + SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
-                        .format(Date(recordStartMs)),
-                    folderId = pendingFolder,
-                    durationMs = max(st.durationMs, 100),
-                    sizeBytes = file.length(),
-                    format = fmt.name,
-                )
-            )
-            val dest = store.fileFor(id, fmt)
-            file.renameTo(dest)
-            db.recordingDao().byId(id)?.let { r ->
-                db.recordingDao().update(r.copy(sizeBytes = dest.length()))
-            }
-            toast("Salva! (${dest.length() / 1024} KB, ${fmt.name})")
         }
     }
 

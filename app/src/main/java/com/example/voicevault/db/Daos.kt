@@ -99,4 +99,20 @@ interface RecordingDao {
     /** Total de gravações em todas as pastas. */
     @Query("SELECT COUNT(*) FROM recordings")
     fun countFlow(): Flow<Int>
+
+    /** Todas as gravações (para varredura de arquivos órfãos na inicialização). */
+    @Query("SELECT id FROM recordings")
+    suspend fun allIds(): List<Long>
+}
+
+@Dao
+interface PendingDao {
+    @Insert
+    suspend fun upsert(p: PendingRecord)
+
+    @Query("SELECT * FROM pending WHERE id = 1")
+    suspend fun get(): PendingRecord?
+
+    @Query("DELETE FROM pending")
+    suspend fun clear()
 }

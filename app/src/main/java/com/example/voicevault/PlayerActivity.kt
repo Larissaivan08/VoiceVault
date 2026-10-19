@@ -10,6 +10,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.voicevault.databinding.ActivityPlayerBinding
 import com.example.voicevault.db.AppDb
+import com.example.voicevault.db.AudioFormat
 import com.example.voicevault.io.AudioStore
 import com.example.voicevault.ui.RecordingAdapter
 import kotlinx.coroutines.launch
@@ -47,7 +48,7 @@ class PlayerActivity : AppCompatActivity() {
                 RecordingAdapter.formatSize(rec.sizeBytes),
                 rec.format,
             )
-            preparePlayer()
+            preparePlayer(AudioFormat.fromName(rec.format))
         }
 
         b.btnPlayPause.setOnClickListener { togglePlay() }
@@ -62,13 +63,21 @@ class PlayerActivity : AppCompatActivity() {
         b.btnDelete.setOnClickListener { confirmDelete() }
     }
 
-    private fun preparePlayer() {
-        val file = store.fileFor(recordingId)
+    /** Resolve o arquivo pelo formato SALVO no banco; fallback para qualquer extensão existente. */
+    private fun preparePlayer(fmt: AudioFormat) {
+        val file = store.findExisting(recordingId) ?: store.fileFor(recordingId, fmt)
         if (!file.exists()) { toast("Arquivo não encontrado."); finish(); return }
-        player = MediaPlayer().apply {
-            setDataSource(file.absolutePath)
-            prepare()
-            setOnCompletionListener { stopProgressUpdates(); resetUiToStart() }
+        runCatching {
+            player = MediaPlayer().apply {
+                setDataSource(file.absolutePath)
+                prepare()
+                setOnCompletionListener { stopProgressUpdates(); resetUiToStart() }
+                setOnErrorListener { _, _, _ -> toast("Falha ao reproduzir este arquivo."); true }
+            }
+        }.onFailure {
+            toast("Não foi possível abrir o áudio: ${it.message}")
+            finish()
+            return
         }
         b.seek.max = player?.duration ?: 0
     }

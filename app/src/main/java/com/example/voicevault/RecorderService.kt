@@ -13,23 +13,44 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.example.voicevault.db.AppDb
 import com.example.voicevault.db.AudioFormat
 import com.example.voicevault.db.AudioQuality
+import com.example.voicevault.db.PendingRecord
+import com.example.voicevault.db.Recording
+import com.example.voicevault.io.AudioStore
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
- * Serviço em primeiro plano que grava o áudio.
- * Roda mesmo com a tela apagada ou o app minimizado.
+ * Serviço em primeiro plano que grava o áudio E finaliza/salva a gravação
+ * de forma autônoma (independente da Activity estar viva).
+ * A sessão fica persistida na tabela "pending" para sobreviver a crash do processo.
  */
 class RecorderService : Service() {
 
     private var recorder: MediaRecorder? = null
     private var startedAt = 0L
+    private var pausedTotalMs = 0L
+    private var pauseStartedAt = 0L
+    private var isPaused = false
+    private var outPath = ""
+    private var fmtName = "M4A"
+    private var folderId: Long? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP -> { finishRecording(); return START_NOT_STICKY }
             ACTION_PAUSE -> { pauseRecording(); return START_NOT_STICKY }
             ACTION_RESUME -> { resumeRecording(); return START_NOT_STICKY }
         }
@@ -37,19 +58,26 @@ class RecorderService : Service() {
         if (recorder != null) return START_STICKY // já gravando
 
         val fmt = AudioFormat.fromName(intent?.getStringExtra(EXTRA_FORMAT))
-        val outPath = intent?.getStringExtra(EXTRA_OUTPUT) ?: return START_NOT_STICKY
+        outPath = intent?.getStringExtra(EXTRA_OUTPUT) ?: return START_NOT_STICKY
+        folderId = if (intent.hasExtra(EXTRA_FOLDER)) intent.getLongExtra(EXTRA_FOLDER, -1)
+            .takeIf { it >= 0 } else null
+        fmtName = fmt.name
 
         createChannel()
-        // Android 14+ (API 34): serviços com tipo microphone exigem a permissão RECORD_AUDIO
-        // concedida ANTES do startForeground — senão lança SecurityException e a gravação
-        // em segundo plano "não funciona".
-        if (Build.VERSION.SDK_INT >= 34 &&
-            ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            LastRecord.result = LastRecord.Fail("Sem permissão de microfone")
+        RunningServices.add(RecorderService::class.java.name)
+        // Android 14+ (API 34): tipo microphone exige RECORD_AUDIO concedida ANTES do startForeground.
+        if (Build.VERSION.SDK_INT >= 34 && !hasMicPermission(this)) {
+            File(outPath).delete()
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        // Persiste a sessão pendente ANTES de começar — sobrevive a crash do processo.
+        kotlinx.coroutines.runBlocking {
+            AppDb.get(this@RecorderService).pendingDao().upsert(
+                PendingRecord(id = 1, outPath = outPath, format = fmtName,
+                    folderId = folderId, startedAt = System.currentTimeMillis())
+            )
         }
         val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
@@ -59,8 +87,8 @@ class RecorderService : Service() {
         try {
             recorder = newRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
-                if (!fmt.configure(this)) throw IllegalStateException("Formato $fmt não suportado")
-                val q = AudioQuality.fromName(intent?.getStringExtra(EXTRA_QUALITY))
+                if (!fmt.configure(this)) error("Formato $fmt não suportado neste aparelho")
+                val q = AudioQuality.fromName(intent.getStringExtra(EXTRA_QUALITY))
                 setAudioEncodingBitRate(q.bitRate)
                 setAudioSamplingRate(q.sampleRate)
                 setOutputFile(outPath)
@@ -68,53 +96,142 @@ class RecorderService : Service() {
                 start()
             }
         } catch (e: Exception) {
+            File(outPath).delete()
+            notifyUser(e.message ?: "Falha ao iniciar gravação")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
-            LastRecord.result = LastRecord.Fail(e.message ?: "Falha na gravação")
             return START_NOT_STICKY
         }
         startedAt = System.currentTimeMillis()
-        LastRecord.result = LastRecord.Recording(startedAt, outPath, fmt.name)
+        LiveSession.begin(startedAt, fmtName)
+        persistPending()
         return START_STICKY
     }
 
+    // ---------- Pausar / retomar ----------
+
     private fun pauseRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            runCatching { recorder?.pause() }
-            setPaused(true)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        runCatching { recorder?.pause() }.onSuccess {
+            isPaused = true
+            pauseStartedAt = System.currentTimeMillis()
             updateNotification("Pausado", "Gravação pausada — toque para retomar")
+            LiveSession.markPause(System.currentTimeMillis())
+            LiveSession.setPaused(true, System.currentTimeMillis())
+            persistPending()
         }
     }
 
     private fun resumeRecording() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            runCatching { recorder?.resume() }
-            setPaused(false)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        runCatching { recorder?.resume() }.onSuccess {
+            pausedTotalMs += System.currentTimeMillis() - pauseStartedAt
+            isPaused = false
             updateNotification("Gravando…", "Toque para abrir o VoiceVault")
+            LiveSession.setPaused(false, System.currentTimeMillis())
+            persistPending()
         }
     }
 
-    private fun setPaused(value: Boolean) {
-        val r = LastRecord.result
-        if (r is LastRecord.Recording) LastRecord.result = r.copy(paused = value)
+    private fun persistPending() {
+        scope.launch {
+            AppDb.get(this@RecorderService).pendingDao().upsert(
+                PendingRecord(1, outPath, fmtName, folderId, startedAt, pausedTotalMs, isPaused)
+            )
+        }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    // ---------- Finalização autônoma (não depende da MainActivity!) ----------
+
+    /** Para o MediaRecorder e SALVA no banco aqui mesmo, no serviço. */
+    private fun finishRecording() {
         val rec = recorder
+        if (rec == null) { stopSelf(); return }
         recorder = null
-        if (rec != null) {
-            val duration = System.currentTimeMillis() - startedAt
-            runCatching { rec.stop() }
-            runCatching { rec.release() }
-            val path = LastRecord.result?.outPath
-            LastRecord.result = LastRecord.Stopped(duration, path ?: "")
-        } else {
-            // foi parado sem ter gravado
-            if (LastRecord.result !is LastRecord.Fail) LastRecord.result = null
-        }
+        LiveSession.end()
+
+        val durationMs = elapsedMs()
+        val file = File(outPath)
+
+        // 1) parar o gravador CONFIRMANDO o sucesso
+        val stopOk = runCatching { rec.stop() }.isSuccess
+        runCatching { rec.release() }
         stopForeground(STOP_FOREGROUND_REMOVE)
+
+        if (!stopOk || !file.exists() || file.length() == 0L) {
+            // falha real ou arquivo vazio → descarta com aviso honesto
+            val recoverable = file.exists() && file.length() > 0L
+            if (!recoverable) file.delete()
+            notifyUser(if (recoverable)
+                "Gravação interrompida — tentando recuperar o arquivo."
+            else "A gravação terminou sem gerar áudio; nada foi salvo.")
+            scope.launch { AppDb.get(this@RecorderService).pendingDao().clear() }
+            if (recoverable) saveToDb(file, fallbackDurationMs = MediaInfo.durationOf(file))
+            stopSelf()
+            return
+        }
+
+        // 2) caminho normal: stop OK + arquivo válido
+        saveToDb(file, fallbackDurationMs = durationMs)
+        stopSelf()
     }
+
+    private fun elapsedMs(): Long {
+        val extraPause = if (isPaused) System.currentTimeMillis() - pauseStartedAt else 0
+        return System.currentTimeMillis() - startedAt - pausedTotalMs - extraPause
+    }
+
+    /** Insere no banco + move o arquivo; verifica cada passo (integridade).
+     *  Usa um escopo detached que SOBREVIVE ao onDestroy()/stopSelf() do serviço. */
+    private fun saveToDb(tmp: File, fallbackDurationMs: Long) {
+        val appCtx = applicationContext
+        val db = AppDb.get(appCtx)
+        val store = AudioStore(appCtx)
+        val fmt = AudioFormat.fromName(fmtName)
+        val folder = folderId
+        val start = startedAt
+        val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        saveScope.launch {
+            try {
+                val id = db.recordingDao().insert(
+                    Recording(
+                        title = "Gravação " + SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
+                            .format(Date(start)),
+                        folderId = folder,
+                        durationMs = maxOf(fallbackDurationMs, 100),
+                        sizeBytes = tmp.length(),
+                        format = fmt.name,
+                    )
+                )
+                val dest = store.fileFor(id, fmt)
+                val moved = tmp.renameTo(dest) ||
+                    (runCatching { tmp.copyTo(dest, overwrite = false); true }.getOrDefault(false)
+                        .also { if (it) tmp.delete() })
+                if (!moved || !dest.exists() || dest.length() == 0L) {
+                    // banco registrou mas o arquivo não chegou → desfaz o registro
+                    db.recordingDao().byId(id)?.let { db.recordingDao().delete(it) }
+                    tmp.delete()
+                    NotificationHelper.show(appCtx, "Falha ao salvar o arquivo da gravação.")
+                } else {
+                    db.recordingDao().byId(id)?.let { r ->
+                        db.recordingDao().update(r.copy(sizeBytes = dest.length()))
+                    }
+                    NotificationHelper.show(appCtx,
+                        "Gravação salva (${dest.length() / 1024} KB, ${fmt.name}) ✅")
+                }
+            } finally {
+                db.pendingDao().clear()
+                kotlin.coroutines.Continuation // noop
+            }
+        }
+    }
+
+    // ---------- Notificações ----------
+
+    private fun notifyUser(msg: String) = NotificationHelper.show(this, msg)
+
+    private fun notifySaved(sizeBytes: Long, fmt: String) =
+        NotificationHelper.show(this, "Gravação salva (${sizeBytes / 1024} KB, $fmt) ✅")
 
     @Suppress("DEPRECATION")
     private fun newRecorder(): MediaRecorder =
@@ -131,7 +248,7 @@ class RecorderService : Service() {
         )
         val pauseResumeIntent = PendingIntent.getService(
             this, 2, Intent(this, RecorderService::class.java).setAction(
-                if (pausedNow()) ACTION_RESUME else ACTION_PAUSE
+                if (isPaused) ACTION_RESUME else ACTION_PAUSE
             ),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
@@ -141,13 +258,10 @@ class RecorderService : Service() {
             .setSmallIcon(android.R.drawable.presence_audio_online)
             .setOngoing(true)
             .setContentIntent(openIntent)
-            .addAction(0, if (pausedNow()) "▶ Retomar" else "⏸ Pausar", pauseResumeIntent)
+            .addAction(0, if (isPaused) "▶ Retomar" else "⏸ Pausar", pauseResumeIntent)
             .addAction(0, "⏹ Parar", stopIntent)
             .build()
     }
-
-    private fun pausedNow(): Boolean =
-        (LastRecord.result as? LastRecord.Recording)?.paused == true
 
     private fun updateNotification(title: String, text: String) {
         getSystemService(NotificationManager::class.java)
@@ -163,11 +277,21 @@ class RecorderService : Service() {
         }
     }
 
+    override fun onDestroy() {
+        // Se o sistema matou o serviço sem passar pelo ACTION_STOP,
+        // ainda tentamos finalizar corretamente.
+        if (recorder != null) finishRecording()
+        RunningServices.remove(RecorderService::class.java.name)
+        scope.cancel()
+        super.onDestroy()
+    }
+
     companion object {
         const val CHANNEL_ID = "recording"
         const val EXTRA_OUTPUT = "output"
         const val EXTRA_FORMAT = "format"
         const val EXTRA_QUALITY = "quality"
+        const val EXTRA_FOLDER = "folder"
         const val ACTION_STOP = "com.example.voicevault.STOP"
         const val ACTION_PAUSE = "com.example.voicevault.PAUSE"
         const val ACTION_RESUME = "com.example.voicevault.RESUME"
@@ -175,20 +299,25 @@ class RecorderService : Service() {
         fun hasMicPermission(ctx: Context) =
             ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
+
+        /** O serviço está vivo agora? Checa o processo E o estado ao vivo. */
+        fun isRunning(ctx: Context): Boolean {
+            if (LiveSession.active) return true
+            val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mine = android.os.Process.myPid()
+            for (svc in am.getRunningServices(Int.MAX_VALUE)) {
+                if (svc.service.className == RecorderService::class.java.name && svc.pid == mine)
+                    return true
+            }
+            return false
+        }
     }
 }
 
-/** Canal de comunicação simples Activity <-> Service (sem AIDL/broadcast). */
-object LastRecord {
-    sealed class State { abstract val outPath: String }
-    data class Recording(
-        val startedAt: Long,
-        override val outPath: String,
-        val format: String,
-        val paused: Boolean = false,
-    ) : State()
-    data class Stopped(val durationMs: Long, override val outPath: String) : State()
-    data class Fail(val message: String) : State() { override val outPath = "" }
-
-    @Volatile var result: State? = null
+/** Registro simples de serviços vivos neste processo. */
+object RunningServices {
+    private val set = java.util.concurrent.CopyOnWriteArrayList<String>()
+    fun add(name: String) { if (!set.contains(name)) set.add(name) }
+    fun remove(name: String) = set.remove(name)
+    fun contains(name: String) = set.contains(name)
 }
