@@ -264,9 +264,14 @@ class PdfActivity : AppCompatActivity() {
         }
         if (docs.isEmpty()) documentsList.addView(TextView(this).apply { text = "Nenhum PDF nesta pasta." })
         docs.forEach { (id, name, path) ->
-            documentsList.addView(Button(this).apply {
-                text = "PDF  ·  $name"
-                isAllCaps = false
+            documentsList.addView(TextView(this).apply {
+                text = "▤   $name"
+                textSize = 15f
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+                setPadding(16.dp(), 18.dp(), 16.dp(), 18.dp())
+                background = rounded(0x12EF5E64, 16)
+                isClickable = true
+                isFocusable = true
                 setOnClickListener {
                     try {
                         val file = File(path)
@@ -311,6 +316,8 @@ class PdfActivity : AppCompatActivity() {
                         }.show()
                     true
                 }
+            }, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = 8.dp()
             })
         }
     }
