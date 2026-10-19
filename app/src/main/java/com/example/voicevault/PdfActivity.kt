@@ -1,6 +1,14 @@
 package com.example.voicevault
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
+import android.widget.GridLayout
+import com.google.android.material.card.MaterialCardView
+import androidx.core.graphics.ColorUtils
 import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Intent
@@ -19,7 +27,7 @@ import java.util.UUID
 /** Local PDF library; independent of audio folders and database. */
 class PdfActivity : AppCompatActivity() {
     private lateinit var db: PdfDb
-    private lateinit var foldersRow: LinearLayout
+    private lateinit var foldersRow: GridLayout
     private lateinit var documentsList: LinearLayout
     private var folderId: Long? = null
     private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -31,52 +39,67 @@ class PdfActivity : AppCompatActivity() {
         db = PdfDb()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20.dp(), 24.dp(), 20.dp(), 16.dp())
+            setPadding(18.dp(), 20.dp(), 18.dp(), 12.dp())
+            setBackgroundColor(themeColor(com.google.android.material.R.attr.colorSurface, Color.WHITE))
         }
-        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        tabs.addView(Button(this).apply {
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = rounded(0x12EF5E64, 20)
+            setPadding(4.dp(), 4.dp(), 4.dp(), 4.dp())
+        }
+        tabs.addView(com.google.android.material.button.MaterialButton(this).apply {
             text = "Áudios"
+            isAllCaps = false
             setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(0, 52.dp(), 1f))
-        tabs.addView(Button(this).apply {
+        }, LinearLayout.LayoutParams(0, 48.dp(), 1f))
+        tabs.addView(com.google.android.material.button.MaterialButton(this).apply {
             text = "PDFs"
+            isAllCaps = false
             isEnabled = false
-        }, LinearLayout.LayoutParams(0, 52.dp(), 1f))
+        }, LinearLayout.LayoutParams(0, 48.dp(), 1f))
         root.addView(tabs)
         root.addView(TextView(this).apply {
-            text = "Meus PDFs"
-            textSize = 25f
-            setPadding(0, 14.dp(), 0, 8.dp())
+            text = "Biblioteca de PDFs"
+            textSize = 26f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+            setPadding(2.dp(), 20.dp(), 0, 2.dp())
         })
-        val actions = LinearLayout(this)
-        actions.addView(Button(this).apply {
+        root.addView(TextView(this).apply {
+            text = "Organize seus documentos com segurança, mesmo offline."
+            textSize = 14f
+            setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY))
+            setPadding(2.dp(), 0, 0, 17.dp())
+        })
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        actions.addView(com.google.android.material.button.MaterialButton(this).apply {
             text = "+ Importar PDF"
+            isAllCaps = false
+            textSize = 13f
             setOnClickListener { picker.launch(arrayOf("application/pdf")) }
-        }, LinearLayout.LayoutParams(0, 52.dp(), 1f))
-        actions.addView(Button(this).apply {
+        }, LinearLayout.LayoutParams(0, 56.dp(), 1f))
+        actions.addView(com.google.android.material.button.MaterialButton(this).apply {
             text = "+ Nova pasta"
+            isAllCaps = false
+            textSize = 13f
             setOnClickListener { askName("Criar pasta", "") { name ->
                 db.writableDatabase.insertOrThrow("folders", null,
                     ContentValues().apply { put("name", name) })
                 refresh()
             } }
-        }, LinearLayout.LayoutParams(0, 52.dp(), 1f))
+        }, LinearLayout.LayoutParams(0, 56.dp(), 1f).apply { marginStart = 6.dp() })
         root.addView(actions)
-        root.addView(TextView(this).apply {
-            text = "Pastas de PDFs"
-            textSize = 19f
-            setPadding(0, 16.dp(), 0, 8.dp())
-        })
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        foldersRow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(sectionTitle("Pastas"))
+        foldersRow = GridLayout(this).apply {
+            columnCount = 2
+            alignmentMode = GridLayout.ALIGN_MARGINS
+            useDefaultMargins = false
+        }
+        body.addView(foldersRow, LinearLayout.LayoutParams(-1, -2))
+        body.addView(sectionTitle("Documentos da pasta"))
         documentsList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(foldersRow)
-        body.addView(TextView(this).apply {
-            text = "Documentos"
-            textSize = 19f
-            setPadding(0, 16.dp(), 0, 8.dp())
-        })
         body.addView(documentsList)
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
