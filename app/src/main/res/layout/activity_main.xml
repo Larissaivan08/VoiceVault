@@ -168,43 +168,18 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:layout_marginTop="16dp">
-                    <LinearLayout
+                    <Button
+                        android:id="@+id/btnPauseResume"
+                        style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center">
-                        <Button
-                            android:id="@+id/btnPauseResume"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="56dp"
-                            android:singleLine="true"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:textAllCaps="false"
-                            android:textSize="14sp"
-                            android:minWidth="0dp"
-                            android:text="Pausar"
-                            app:cornerRadius="20dp"
-                            android:enabled="false"/>
-                        <Button
-                            android:id="@+id/btnMarker"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_weight="1"
-                            android:layout_height="56dp"
-                            android:layout_marginStart="10dp"
-                            android:singleLine="true"
-                            android:maxLines="1"
-                            android:ellipsize="end"
-                            android:textAllCaps="false"
-                            android:textSize="14sp"
-                            android:minWidth="0dp"
-                            android:text="Marcar"
-                            app:cornerRadius="20dp"
-                            android:enabled="false"/>
-                    </LinearLayout>
+                        android:layout_height="56dp"
+                        android:singleLine="true"
+                        android:maxLines="1"
+                        android:textAllCaps="false"
+                        android:textSize="14sp"
+                        android:text="Pausar"
+                        app:cornerRadius="20dp"
+                        android:enabled="false"/>
                     <Button
                         android:id="@+id/btnTheme"
                         style="@style/Widget.Material3.Button.TextButton"
