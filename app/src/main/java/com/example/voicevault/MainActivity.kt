@@ -160,7 +160,6 @@ class MainActivity : AppCompatActivity() {
         b.profileName.setOnClickListener { editProfileName() }
         b.btnRecord.setOnClickListener { toggleRecording() }
         b.btnPauseResume.setOnClickListener { togglePauseResume() }
-        b.btnMarker.setOnClickListener { addMarker() }
         b.btnQuality.setOnClickListener { chooseQuality() }
         b.btnAddFolder.setOnClickListener { promptText(
             title = "Nova pasta", hint = "Nome da pasta", prefill = "",
@@ -410,18 +409,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun showMoveDialog(recordingId: Long) {
         lifecycleScope.launch {
-            val folders = mutableListOf<Pair<String, Long?>>("🏠 Raiz" to null)
-            folders += db.folderDao().listWithCount().map { it.name to it.id }
-            val names = folders.map { it.first }.toTypedArray()
+            val recording = db.recordingDao().byId(recordingId)
+            if (recording == null) {
+                toast("Gravação não encontrada.")
+                return@launch
+            }
+            val destinations = listOf<Pair<String, Long?>>("Raiz (sem pasta)" to null) +
+                db.folderDao().listWithCount().map { it.name to it.id }
             android.app.AlertDialog.Builder(this@MainActivity)
-                .setTitle("Mover para…")
-                .setItems(names) { _, i ->
-                    launch {
-                        db.recordingDao().moveToFolder(recordingId, folders[i].second)
-                        toast("Gravação movida.")
+                .setTitle("Mover para qual pasta?")
+                .setSingleChoiceItems(
+                    destinations.map { it.first }.toTypedArray(),
+                    destinations.indexOfFirst { it.second == recording.folderId }
+                ) { dialog, selected ->
+                    dialog.dismiss()
+                    val target = destinations[selected]
+                    lifecycleScope.launch {
+                        try {
+                            val changed = db.recordingDao().moveToFolder(recordingId, target.second)
+                            if (changed == 0) {
+                                toast("Não foi possível mover: gravação não encontrada.")
+                            } else {
+                                selectFolder(target.second)
+                                queryFlow.value = null
+                                b.search.setText("")
+                                val currentFolders = db.folderDao().listWithCount()
+                                rebuildFolderChips(currentFolders)
+                                toast("Áudio movido para ${target.first}.")
+                            }
+                        } catch (e: Exception) {
+                            toast("Erro ao mover o áudio. Tente novamente.")
+                        }
                     }
-                }
-                .show()
+                }.setNegativeButton("Cancelar", null).show()
         }
     }
 
@@ -505,7 +525,6 @@ class MainActivity : AppCompatActivity() {
     private fun startRecording() {
         pausedTotalMs = 0L
         pauseStartedAt = 0L
-        markers.clear()
         pendingFolder = currentFolderId
         pendingFormat = chosenFormat
         pendingQuality = chosenQuality
@@ -557,7 +576,6 @@ class MainActivity : AppCompatActivity() {
         b.statusLabel.text = if (state?.paused == true) "Pausado" else if (recording) "Gravando…" else ""
         b.btnPauseResume.isEnabled = recording
         b.btnPauseResume.text = if (state?.paused == true) "Retomar" else "Pausar"
-        b.btnMarker.isEnabled = recording
         b.wave.setActive(recording)
         timer?.cancel()
         if (recording) {
@@ -606,13 +624,6 @@ class MainActivity : AppCompatActivity() {
         startService(Intent(this, RecorderService::class.java).setAction(action))
         // UI reads the service-confirmed state on the next timer tick.
     }
-
-    private fun addMarker() {
-        val elapsed = (LastRecord.result as? LastRecord.Recording)?.let { elapsedRecordingMs(it) } ?: 0L
-        markers.add(formatHMS(max(0, elapsed)))
-        toast("Marcador em ${formatHMS(max(0, elapsed))}")
-    }
-    private val markers = mutableListOf<String>()
 
     /** Sincroniza a UI quando voltamos ao app com gravação em andamento (ex.: tela apagada). */
     private fun syncRecordingState() {
