@@ -180,6 +180,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupButtons() {
+        b.btnPdfs.setOnClickListener { startActivity(Intent(this, PdfActivity::class.java)) }
         b.profilePhoto.setOnClickListener { selectProfilePhoto.launch("image/*") }
         b.profilePhotoEdit.setOnClickListener { selectProfilePhoto.launch("image/*") }
         b.profileName.setOnClickListener { editProfileName() }
