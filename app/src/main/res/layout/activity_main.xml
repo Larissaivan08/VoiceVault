@@ -12,21 +12,77 @@
         android:padding="20dp"
         android:background="?attr/colorSurface">
 
-        <!-- Cabeçalho -->
-        <TextView
-            android:layout_width="wrap_content"
+        <!-- Perfil local: foto da galeria, nome editável e selo decorativo -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="VoiceVault"
-            android:textAppearance="?textAppearanceHeadlineSmall"
-            android:textStyle="bold" />
-
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="14dp">
+            <FrameLayout
+                android:layout_width="76dp"
+                android:layout_height="76dp">
+                <ImageView
+                    android:id="@+id/profilePhoto"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/profile_circle"
+                    android:clipToOutline="true"
+                    android:scaleType="centerCrop"
+                    android:contentDescription="Escolher foto de perfil na galeria"/>
+                <TextView
+                    android:id="@+id/profilePhotoEdit"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="bottom|end"
+                    android:background="@drawable/profile_edit_circle"
+                    android:gravity="center"
+                    android:text="+"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:textSize="20sp"
+                    android:contentDescription="Alterar foto"/>
+            </FrameLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="14dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:id="@+id/profileName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxWidth="200dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="usuario"
+                    android:textAppearance="?textAppearanceTitleLarge"
+                    android:textStyle="bold"
+                    android:contentDescription="Toque para editar nome de usuário"/>
+                <ImageView
+                    android:layout_width="23dp"
+                    android:layout_height="23dp"
+                    android:layout_marginStart="7dp"
+                    android:src="@drawable/ic_profile_badge"
+                    android:contentDescription="Selo azul decorativo"/>
+            </LinearLayout>
+        </LinearLayout>
         <TextView
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gravador Smart"
+            android:textAppearance="?textAppearanceHeadlineMedium"
+            android:textStyle="bold"/>
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Gravador de áudio"
+            android:text="Grave suas ideias, aulas, reuniões e muito mais."
             android:textAppearance="?textAppearanceBodyMedium"
-            android:textColor="?android:textColorSecondary" />
+            android:textColor="?android:textColorSecondary"/>
 
         <!-- Painel principal de gravação (card branco) -->
         <com.google.android.material.card.MaterialCardView
