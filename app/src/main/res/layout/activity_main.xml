@@ -12,6 +12,24 @@
         android:padding="20dp"
         android:background="?attr/colorSurface">
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="14dp">
+            <Button
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="52dp"
+                android:text="Áudios"
+                android:enabled="false"/>
+            <Button
+                android:id="@+id/btnPdfs"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="52dp"
+                android:text="PDFs"/>
+        </LinearLayout>
         <!-- Perfil local: foto da galeria, nome editável e selo decorativo -->
         <LinearLayout
             android:layout_width="match_parent"
