@@ -183,34 +183,77 @@ class PdfActivity : AppCompatActivity() {
     private fun refresh() {
         foldersRow.removeAllViews()
         val folders = allFolders()
-        fun addFolder(name: String, id: Long?) {
-            foldersRow.addView(Button(this).apply {
-                text = (if (folderId == id) "✓  " else "📁  ") + name
-                isAllCaps = false
+        val colors = intArrayOf(0xFFDB797E.toInt(), 0xFF459FE1.toInt(),
+            0xFFAE72DE.toInt(), 0xFF46B99B.toInt(), 0xFFE8B34F.toInt())
+        fun addFolder(name: String, id: Long?, index: Int) {
+            val selected = folderId == id
+            val tint = colors[index % colors.size]
+            val card = MaterialCardView(this).apply {
+                radius = 18.dp().toFloat()
+                cardElevation = if (selected) 4.dp().toFloat() else 1.dp().toFloat()
+                setCardBackgroundColor(ColorUtils.setAlphaComponent(tint, if (selected) 52 else 25))
+                strokeColor = tint
+                strokeWidth = if (selected) 2.dp() else 1.dp()
+                isClickable = true
                 setOnClickListener { folderId = id; refresh() }
-                if (id != null) setOnLongClickListener {
-                    AlertDialog.Builder(this@PdfActivity).setTitle(name)
-                        .setItems(arrayOf("Renomear", "Excluir pasta")) { _, option ->
-                            if (option == 0) askName("Renomear pasta", name) { newName ->
-                                db.writableDatabase.execSQL("UPDATE folders SET name=? WHERE id=?",
-                                    arrayOf(newName, id))
+            }
+            val count = db.readableDatabase.rawQuery(
+                if (id == null) "SELECT COUNT(*) FROM documents WHERE folderId IS NULL"
+                else "SELECT COUNT(*) FROM documents WHERE folderId = ?",
+                if (id == null) null else arrayOf(id.toString())
+            ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = null
+                setPadding(14.dp(), 17.dp(), 10.dp(), 17.dp())
+            }
+            content.addView(TextView(this).apply {
+                text = name
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+                background = null
+            })
+            content.addView(TextView(this).apply {
+                text = "$count PDFs"
+                textSize = 13f
+                alpha = 0.72f
+                setPadding(0, 5.dp(), 0, 0)
+                setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+                background = null
+            })
+            card.addView(content)
+            if (id != null) card.setOnLongClickListener {
+                AlertDialog.Builder(this@PdfActivity).setTitle(name)
+                    .setItems(arrayOf("Renomear", "Excluir pasta")) { _, option ->
+                        if (option == 0) askName("Renomear pasta", name) { newName ->
+                            db.writableDatabase.execSQL("UPDATE folders SET name=? WHERE id=?",
+                                arrayOf(newName, id))
+                            refresh()
+                        } else AlertDialog.Builder(this@PdfActivity)
+                            .setTitle("Excluir pasta?")
+                            .setMessage("Os PDFs dessa pasta serão movidos para a Raiz.")
+                            .setPositiveButton("Excluir") { _, _ ->
+                                db.writableDatabase.execSQL("UPDATE documents SET folderId=NULL WHERE folderId=?", arrayOf(id))
+                                db.writableDatabase.delete("folders", "id=?", arrayOf(id.toString()))
+                                folderId = null
                                 refresh()
-                            } else AlertDialog.Builder(this@PdfActivity)
-                                .setTitle("Excluir pasta?")
-                                .setMessage("Os PDFs dessa pasta serão movidos para a Raiz.")
-                                .setPositiveButton("Excluir") { _, _ ->
-                                    db.writableDatabase.execSQL("UPDATE documents SET folderId=NULL WHERE folderId=?", arrayOf(id))
-                                    db.writableDatabase.delete("folders", "id=?", arrayOf(id.toString()))
-                                    folderId = null
-                                    refresh()
-                                }.setNegativeButton("Cancelar", null).show()
-                        }.show()
-                    true
-                }
+                            }.setNegativeButton("Cancelar", null).show()
+                    }.show()
+                true
+            }
+            foldersRow.addView(card, GridLayout.LayoutParams(
+                GridLayout.spec(index / 2), GridLayout.spec(index % 2, 1f)
+            ).apply {
+                width = 0
+                height = GridLayout.LayoutParams.WRAP_CONTENT
+                setMargins(5.dp(), 5.dp(), 5.dp(), 5.dp())
             })
         }
-        addFolder("Raiz", null)
-        folders.forEach { addFolder(it.second, it.first) }
+        addFolder("Raiz", null, 0)
+        folders.forEachIndexed { index, pair -> addFolder(pair.second, pair.first, index + 1) }
         documentsList.removeAllViews()
         val docs = mutableListOf<Triple<Long, String, String>>()
         val where = if (folderId == null) "folderId IS NULL" else "folderId=?"
@@ -270,6 +313,22 @@ class PdfActivity : AppCompatActivity() {
                 }
             })
         }
+    }
+
+    private fun themeColor(attr: Int, fallback: Int): Int =
+        com.google.android.material.color.MaterialColors.getColor(this, attr, fallback)
+
+    private fun rounded(color: Int, radiusDp: Int) = GradientDrawable().apply {
+        cornerRadius = radiusDp.dp().toFloat()
+        setColor(color)
+    }
+
+    private fun sectionTitle(label: String) = TextView(this).apply {
+        text = label
+        textSize = 20f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
+        setPadding(2.dp(), 20.dp(), 0, 10.dp())
     }
 
     private fun askName(title: String, current: String, action: (String) -> Unit) {
